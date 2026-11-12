@@ -1,3 +1,55 @@
+/* =========================================
+   OLD MONEY GREEN - VITE / COMPANY VARIABLES
+   ========================================= */
+:root {
+  /* Heritage Backgrounds & Typography */
+  --bg: #F8F6F0;            /* Warm Alabaster (Editorial Paper) */
+  --text: #3A3F3A;          /* Muted Charcoal-Olive Body Text */
+  --text-h: #004225;        /* Deep British Racing Green Headings */
+
+  /* Primary Accents (Interactive Buttons & Badges) */
+  --accent: #004225;        /* British Racing Green */
+  --accent-bg: rgba(0, 66, 37, 0.08);      /* Subtle Sage Tint */
+  --accent-border: rgba(184, 155, 106, 0.65); /* Burnished Brass Hover Border */
+
+  /* Structural Borders, Social Links & Shadows */
+  --border: rgba(76, 61, 25, 0.2);        /* Warm Espresso Hairline */
+  --social-bg: #EFECE4;     /* Soft Parchment Surface */
+  --shadow: 0 4px 14px rgba(0, 66, 37, 0.12); /* Soft Heritage Green Elevation */
+}
+
+/* Optional: Dark Heritage Mode (Deep Library Green) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0E1A14;          /* Deep Forest Night */
+    --text: #C8C5BC;        /* Aged Parchment Text */
+    --text-h: #F8F6F0;      /* Warm Alabaster Headings */
+
+    --accent: #B89B6A;      /* Antique Brass Accent */
+    --accent-bg: rgba(184, 155, 106, 0.12);
+    --accent-border: rgba(184, 155, 106, 0.5);
+
+    --border: rgba(184, 155, 106, 0.22);
+    --social-bg: #16261E;   /* Dark Racing Green Card */
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* =========================================
+   BASE PAGE SETUP
+   ========================================= */
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+h1, h2, h3 {
+  color: var(--text-h);
+}
+
+/* =========================================
+   YOUR ADJUSTED COMPONENT STYLES
+   ========================================= */
 .counter {
   font-size: 16px;
   padding: 5px 10px;
@@ -5,7 +57,7 @@
   color: var(--accent);
   background: var(--accent-bg);
   border: 2px solid transparent;
-  transition: border-color 0.3s;
+  transition: border-color 0.3s, background-color 0.3s;
   margin-bottom: 24px;
 
   &:hover {
@@ -87,6 +139,7 @@
     margin-bottom: 16px;
     width: 22px;
     height: 22px;
+    color: var(--accent);
   }
 
   @media (max-width: 1024px) {
@@ -120,15 +173,17 @@
     font-size: 16px;
     border-radius: 6px;
     background: var(--social-bg);
+    border: 1px solid var(--border);
     display: flex;
     padding: 6px 12px;
     align-items: center;
     gap: 8px;
     text-decoration: none;
-    transition: box-shadow 0.3s;
+    transition: box-shadow 0.3s, border-color 0.3s;
 
     &:hover {
       box-shadow: var(--shadow);
+      border-color: var(--accent-border);
     }
     .button-icon {
       height: 18px;
