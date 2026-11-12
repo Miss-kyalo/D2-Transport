@@ -7,6 +7,7 @@ import DriverDashboard from './pages/DriverDashboard';
 import ManufacturerDashboard from './pages/ManufacturerDashboard';
 import ClientDashboard from './portals/ClientDashboard';
 import PublicTracking from './pages/PublicTracking';
+import PrintableWaybill from './pages/PrintableWaybill';
 
 export default function App() {
     return (
@@ -16,9 +17,10 @@ export default function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 
-                {/* Public QR Tracking (No login required for buyers/consignees) */}
+                {/* Public QR Tracking & Printable Waybill */}
                 <Route path="/track/:trackingCode" element={<PublicTracking />} />
                 <Route path="/track" element={<PublicTracking />} />
+                <Route path="/waybill/:trackingCode" element={<PrintableWaybill />} />
                 
                 {/* Protected Driver Portal */}
                 <Route path="/driver/*" element={

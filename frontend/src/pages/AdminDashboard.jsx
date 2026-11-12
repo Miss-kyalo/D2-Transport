@@ -274,4 +274,53 @@ export default function AdminDashboard() {
             </div>
         </div>
     );
+    {/* Flagged Discrepancy Resolution Queue */}
+<div style={{ marginTop: '30px' }}>
+    <h3 style={{ color: '#ff6b6b' }}>⚠️ Discrepancy & Shrinkage Audit Queue</h3>
+    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', background: '#2d2d2d' }}>
+        <thead>
+            <tr style={{ background: '#383838', textAlign: 'left' }}>
+                <th style={{ padding: '8px' }}>Trip ID</th>
+                <th style={{ padding: '8px' }}>Tracking Code</th>
+                <th style={{ padding: '8px' }}>Route</th>
+                <th style={{ padding: '8px' }}>Initial vs Final</th>
+                <th style={{ padding: '8px' }}>Variance</th>
+                <th style={{ padding: '8px' }}>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {trips.filter(t => t.status === 'Flagged-Discrepancy').length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: '12px', textAlign: 'center', color: '#aaa' }}>No active discrepancy flags. All shipments within tolerance.</td></tr>
+            ) : (
+                trips.filter(t => t.status === 'Flagged-Discrepancy').map(trip => (
+                    <tr key={trip.id} style={{ borderBottom: '1px solid #444' }}>
+                        <td style={{ padding: '8px' }}>#{trip.id}</td>
+                        <td style={{ padding: '8px', color: '#ffd43b', fontWeight: 'bold' }}>{trip.tracking_code}</td>
+                        <td style={{ padding: '8px' }}>{trip.origin} ➔ {trip.destination}</td>
+                        <td style={{ padding: '8px' }}>{trip.initial_weight}t ➔ {trip.final_weight}t</td>
+                        <td style={{ padding: '8px', color: '#ff6b6b', fontWeight: 'bold' }}>-{trip.variance_tons} Tons</td>
+                        <td style={{ padding: '8px' }}>
+                            <button 
+                                onClick={async () => {
+                                    const notes = prompt("Enter resolution audit note (e.g. Approved by plant manager):");
+                                    if (!notes) return;
+                                    try {
+                                        await api.post(`/trips/${trip.id}/resolve-discrepancy`, { resolution_notes: notes });
+                                        alert("Discrepancy resolved! Truck released.");
+                                        window.location.reload();
+                                    } catch (err) {
+                                        alert(err.response?.data?.error || "Failed to resolve.");
+                                    }
+                                }}
+                                style={{ padding: '4px 10px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9em' }}
+                            >
+                                Release Truck
+                            </button>
+                        </td>
+                    </tr>
+                ))
+            )}
+        </tbody>
+    </table>
+</div>
 }

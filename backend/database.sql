@@ -9,6 +9,15 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS manufacturer_id INTEGER REFERENCES us
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS tracking_code VARCHAR(50) UNIQUE;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS consignee_name VARCHAR(150);
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS consignee_phone VARCHAR(50);
+-- Add stamp tracking columns to trips table
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS security_stamp_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS security_stamp_code VARCHAR(100);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS client_received_stamp BOOLEAN DEFAULT FALSE;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS client_stamp_notes TEXT;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS delivery_note_url TEXT;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS ocr_extracted_client VARCHAR(150);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS ocr_extracted_destination VARCHAR(255);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS ocr_security_stamp_detected BOOLEAN DEFAULT FALSE;
 
 -- 4. Create trip_legs for Chain-of-Custody & Rescue Truck Transshipments
 CREATE TABLE IF NOT EXISTS trip_legs (

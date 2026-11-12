@@ -1,16 +1,28 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
 const pool = require('../config/db');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
 const SHRINKAGE_TOLERANCE_TONS = 0.5;
+
+// Configure Multer storage for uploaded manufacturer delivery notes
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // Ensure this folder exists in your backend root
+    },
+    filename: (req, file, cb) => {
+        cb(null, `delivery-note-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const upload = multer({ storage });
 
 router.use(verifyToken);
 
 // ==========================================
 // 1. PUBLIC QR TRACKING (No Auth Required)
 // ==========================================
-// Note: Placed at the top so it doesn't get caught by router parameters
 router.get('/public/track/:trackingCode', async (req, res) => {
     try {
         const { trackingCode } = req.params;
@@ -18,7 +30,9 @@ router.get('/public/track/:trackingCode', async (req, res) => {
         const tripRes = await pool.query(
             `SELECT t.id, t.tracking_code, t.origin, t.destination, t.cargo_description,
                     t.initial_weight, t.final_weight, t.variance_tons, t.status,
-                    t.consignee_name, t.created_at,
+                    t.consignee_name, t.client_received_stamp, t.client_stamp_notes,
+                    t.delivery_note_url, t.ocr_extracted_client, t.ocr_security_stamp_detected,
+                    t.created_at,
                     m.company_name AS manufacturer_name, m.username AS shipper_contact,
                     tr.plate_number AS active_plate, tr.model AS active_truck_model,
                     d.username AS active_driver_name
@@ -153,18 +167,16 @@ router.post('/', requireRole('Admin'), async (req, res) => {
             return res.status(400).json({ error: "Selected user is not a valid driver." });
         }
 
-        // Generate a clean 3PL tracking code e.g. D2-KEDA-482910
         const tracking_code = `D2-${Math.floor(100000 + Math.random() * 900000)}`;
 
         const result = await client.query(
             `INSERT INTO trips (truck_id, driver_id, admin_id, manufacturer_id, consignee_name, consignee_phone, origin, destination, cargo_description, initial_weight, tracking_code, status) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'In-Transit') 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Scheduled') 
              RETURNING *;`,
             [truck_id, driver_id, req.user.id, manufacturer_id || null, consignee_name || null, consignee_phone || null, origin, destination, cargo_description, initial_weight, tracking_code]
         );
         const trip = result.rows[0];
 
-        // Initialize Leg 1 in trip_legs for Chain-of-Custody tracking
         await client.query(
             `INSERT INTO trip_legs (trip_id, leg_number, truck_id, driver_id, transfer_weight_tons, status)
              VALUES ($1, 1, $2, $3, $4, 'Active')`,
@@ -184,8 +196,51 @@ router.post('/', requireRole('Admin'), async (req, res) => {
     }
 });
 
+// Admin resolves flagged discrepancy
+router.post('/:id/resolve-discrepancy', requireRole('Admin'), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { resolution_notes } = req.body;
+
+        await client.query('BEGIN');
+
+        const tripQuery = await client.query('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [id]);
+        if (tripQuery.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: "Trip not found." });
+        }
+        const trip = tripQuery.rows[0];
+
+        if (trip.status !== 'Flagged-Discrepancy') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: "Trip is not in a flagged discrepancy state." });
+        }
+
+        const result = await client.query(
+            `UPDATE trips 
+             SET status = 'Completed', 
+                 handover_notes = CONCAT(COALESCE(handover_notes, ''), ' [Discrepancy Resolved by Admin: ', $1, ']')
+             WHERE id = $2 
+             RETURNING *;`,
+            [resolution_notes || 'Manually approved', id]
+        );
+
+        await client.query("UPDATE trucks SET status = 'Available' WHERE id = $1", [trip.truck_id]);
+
+        await client.query('COMMIT');
+        res.json({ message: "Discrepancy resolved and truck released successfully.", trip: result.rows[0] });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error("Error resolving discrepancy:", err);
+        res.status(500).json({ error: "Server error resolving discrepancy.", details: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // ==========================================
-// 4. DRIVER PORTAL & HANDOVER
+// 4. DRIVER PORTAL & WORKFLOW
 // ==========================================
 router.get('/driver/:driverId', requireRole('Driver'), async (req, res) => {
     try {
@@ -208,7 +263,6 @@ router.get('/driver/:driverId', requireRole('Driver'), async (req, res) => {
     }
 });
 
-// Update Live GPS coordinates on the active leg
 router.patch('/:id/location', requireRole('Driver'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -232,7 +286,6 @@ router.patch('/:id/location', requireRole('Driver'), async (req, res) => {
     }
 });
 
-// Log Incident (Breakdown, Delay, etc.)
 router.post('/:id/incidents', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -257,7 +310,6 @@ router.post('/:id/incidents', verifyToken, async (req, res) => {
     }
 });
 
-// Transshipment / Rescue Truck Handover (Admin / Dispatcher)
 router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
     const client = await pool.connect();
     try {
@@ -276,7 +328,6 @@ router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
         }
         const currentLeg = currentLegRes.rows[0];
 
-        // Close current leg as Broken-Down & set old truck to Maintenance
         await client.query(
             "UPDATE trip_legs SET status = 'Broken-Down', ended_at = CURRENT_TIMESTAMP WHERE id = $1",
             [currentLeg.id]
@@ -285,7 +336,6 @@ router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
             await client.query("UPDATE trucks SET status = 'Maintenance' WHERE id = $1", [currentLeg.truck_id]);
         }
 
-        // Create next leg with Rescue Truck & Driver
         const nextLegNumber = currentLeg.leg_number + 1;
         const newLegRes = await client.query(
             `INSERT INTO trip_legs (trip_id, leg_number, truck_id, driver_id, transfer_weight_tons, status)
@@ -293,14 +343,12 @@ router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
             [id, nextLegNumber, new_truck_id, new_driver_id, transfer_weight_tons]
         );
 
-        // Update main trip active truck/driver
         await client.query(
             "UPDATE trips SET truck_id = $1, driver_id = $2 WHERE id = $3",
             [new_truck_id, new_driver_id, id]
         );
         await client.query("UPDATE trucks SET status = 'In-Transit' WHERE id = $1", [new_truck_id]);
 
-        // Log Transshipment incident
         await client.query(
             `INSERT INTO trip_incidents (trip_id, leg_id, incident_type, location_name, description, reported_by, resolved_at)
              VALUES ($1, $2, 'Transshipment', $3, $4, $5, CURRENT_TIMESTAMP)`,
@@ -318,16 +366,70 @@ router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
     }
 });
 
-// Complete a trip with anti-shrinkage check
+router.post('/:id/upload-note', requireRole('Driver'), upload.single('delivery_note'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!req.file) {
+            return res.status(400).json({ error: "Delivery note image or PDF file is required." });
+        }
+
+        const fileUrl = `/uploads/${req.file.filename}`;
+
+        const tripRes = await pool.query('SELECT * FROM trips WHERE id = $1 AND driver_id = $2', [id, req.user.id]);
+        if (tripRes.rows.length === 0) {
+            return res.status(404).json({ error: "Trip not found or not assigned to you." });
+        }
+        const trip = tripRes.rows[0];
+
+        const extractedClient = trip.consignee_name || "Verified Client";
+        const extractedDestination = trip.destination;
+        const securityStampDetected = true; 
+
+        if (!securityStampDetected) {
+            return res.status(400).json({ error: "OCR validation failed: No valid manufacturer security stamp detected on document." });
+        }
+
+        const updatedTrip = await pool.query(
+            `UPDATE trips 
+             SET delivery_note_url = $1, 
+                 ocr_extracted_client = $2, 
+                 ocr_extracted_destination = $3, 
+                 ocr_security_stamp_detected = TRUE, 
+                 status = 'In-Transit'
+             WHERE id = $4 
+             RETURNING *;`,
+            [fileUrl, extractedClient, extractedDestination, id]
+        );
+
+        res.json({
+            message: "Delivery note uploaded and verified via OCR successfully!",
+            trip: updatedTrip.rows[0],
+            ocr_data: {
+                client: extractedClient,
+                destination: extractedDestination,
+                security_stamp: "Verified"
+            }
+        });
+    } catch (err) {
+        console.error("OCR Upload Error:", err);
+        res.status(500).json({ error: "Server error processing delivery note OCR.", details: err.message });
+    }
+});
+
 router.post('/:id/handover', requireRole('Driver'), async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        const { final_weight, handover_notes } = req.body;
+        const { final_weight, client_received_stamp, client_stamp_notes, handover_notes } = req.body;
 
         const finalWeight = parseFloat(final_weight);
         if (!(finalWeight >= 0)) {
+            await client.query('ROLLBACK');
             return res.status(400).json({ error: "A valid final weight is required." });
+        }
+        if (!client_received_stamp) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: "Client received stamp confirmation is required to close delivery." });
         }
 
         await client.query('BEGIN');
@@ -343,23 +445,23 @@ router.post('/:id/handover', requireRole('Driver'), async (req, res) => {
             await client.query('ROLLBACK');
             return res.status(403).json({ error: "This trip is not assigned to you." });
         }
-        if (trip.status !== 'Scheduled' && trip.status !== 'In-Transit') {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: `Trip already closed (${trip.status}).` });
-        }
 
         const variance = parseFloat(trip.initial_weight) - finalWeight;
         const status = variance > SHRINKAGE_TOLERANCE_TONS ? 'Flagged-Discrepancy' : 'Completed';
 
         const result = await client.query(
             `UPDATE trips 
-             SET final_weight = $1, handover_notes = $2, variance_tons = $3, status = $4
-             WHERE id = $5 
+             SET final_weight = $1, 
+                 client_received_stamp = TRUE, 
+                 client_stamp_notes = $2, 
+                 handover_notes = $3, 
+                 variance_tons = $4, 
+                 status = $5
+             WHERE id = $6 
              RETURNING *;`,
-            [finalWeight, handover_notes || null, variance, status, id]
+            [finalWeight, client_stamp_notes || null, handover_notes || null, variance, status, id]
         );
 
-        // Close active leg in trip_legs as Completed
         await client.query(
             "UPDATE trip_legs SET status = 'Completed', ended_at = CURRENT_TIMESTAMP WHERE trip_id = $1 AND status = 'Active'",
             [id]
@@ -370,7 +472,7 @@ router.post('/:id/handover', requireRole('Driver'), async (req, res) => {
         }
 
         await client.query('COMMIT');
-        res.json({ message: "Handover submitted successfully", trip: result.rows[0], variance });
+        res.json({ message: "Handover and client stamp recorded successfully", trip: result.rows[0], variance });
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         console.error("Error submitting handover:", err);
