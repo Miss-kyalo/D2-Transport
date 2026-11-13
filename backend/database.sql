@@ -1,5 +1,6 @@
 -- 1. Add 'Manufacturer' to your user_role enum safely
 ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Manufacturer';
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Client';
 
 -- 2. Add company name support to users table
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR(150);

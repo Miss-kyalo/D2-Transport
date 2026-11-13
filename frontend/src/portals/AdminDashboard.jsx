@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
@@ -10,6 +10,7 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [refreshKey, setRefreshKey] = useState(0);
 
     // New Trip Dispatch Form State
     const [truckId, setTruckId] = useState('');
@@ -32,28 +33,37 @@ export default function AdminDashboard() {
 
     const navigate = useNavigate();
 
-    const fetchDashboardData = useCallback(async () => {
-        try {
-            const [tripsRes, trucksRes, usersRes] = await Promise.all([
-                api.get('/trips'),
-                api.get('/trucks'),
-                api.get('/auth/users')
-            ]);
-            setTrips(tripsRes.data);
-            setTrucks(trucksRes.data);
-            setDrivers(usersRes.data.filter(u => u.role === 'Driver'));
-            setManufacturers(usersRes.data.filter(u => u.role === 'Manufacturer'));
-        } catch (err) {
-            console.error('Error loading admin dashboard:', err);
-            setError(err.response?.data?.error || 'Failed to load fleet and dispatch data.');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
     useEffect(() => {
-        fetchDashboardData();
-    }, [fetchDashboardData]);
+        let active = true;
+        const loadDashboardData = async () => {
+            try {
+                const [tripsRes, trucksRes, usersRes] = await Promise.all([
+                    api.get('/trips'),
+                    api.get('/trucks'),
+                    api.get('/auth/users')
+                ]);
+                if (active) {
+                    setTrips(tripsRes.data);
+                    setTrucks(trucksRes.data);
+                    setDrivers(usersRes.data.filter(u => u.role === 'Driver'));
+                    setManufacturers(usersRes.data.filter(u => u.role === 'Manufacturer'));
+                    setError('');
+                }
+            } catch (err) {
+                console.error('Error loading admin dashboard:', err);
+                if (active) setError(err.response?.data?.error || 'Failed to load fleet and dispatch data.');
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        loadDashboardData();
+        return () => {
+            active = false;
+        };
+    }, [refreshKey]);
+
+    const refreshDashboardData = () => setRefreshKey((key) => key + 1);
 
     const handleScheduleTrip = async (e) => {
         e.preventDefault();
@@ -81,7 +91,7 @@ export default function AdminDashboard() {
             setDestination('');
             setCargoDescription('');
             setInitialWeight('');
-            fetchDashboardData();
+            refreshDashboardData();
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to schedule trip.');
         }
@@ -106,7 +116,7 @@ export default function AdminDashboard() {
             setTransshipLocation('');
             setTransferWeight('');
             setTransshipNotes('');
-            fetchDashboardData();
+            refreshDashboardData();
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to execute transshipment.');
         }
@@ -120,7 +130,7 @@ export default function AdminDashboard() {
         try {
             await api.post(`/trips/${tripId}/resolve-discrepancy`, { resolution_notes: notes });
             setSuccess(`Discrepancy on Trip #${tripId} resolved. Truck released to Available.`);
-            fetchDashboardData();
+            refreshDashboardData();
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to resolve discrepancy.');
         }

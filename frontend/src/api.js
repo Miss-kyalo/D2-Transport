@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: 'http://localhost:5000/api' });
+const api = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+});
 
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
@@ -14,7 +16,8 @@ api.interceptors.response.use(
     (err) => {
         const status = err.response?.status;
         const isLoginCall = err.config?.url?.startsWith('/auth/');
-        if ((status === 401 || status === 403) && !isLoginCall && err.response?.data?.error?.match(/token/i)) {
+        const message = err.response?.data?.error;
+        if ((status === 401 || status === 403) && !isLoginCall && typeof message === 'string' && /token/i.test(message)) {
             localStorage.clear();
             window.location.href = '/login';
         }

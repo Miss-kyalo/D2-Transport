@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 export default function Register() {
     const [username, setUsername] = useState('');
@@ -16,11 +16,11 @@ export default function Register() {
         setError('');
         setSuccess('');
         try {
-            await axios.post('http://localhost:5000/api/auth/register', {
+            await api.post('/auth/register', {
                 username,
                 password,
                 role,
-                company_name: role === 'Manufacturer' ? companyName : null
+                company_name: ['Manufacturer', 'Client'].includes(role) ? companyName : null
             });
 
             setSuccess('Registration successful! Redirecting to login...');
@@ -71,13 +71,14 @@ export default function Register() {
                     >
                         <option value="Driver">Driver</option>
                         <option value="Manufacturer">Manufacturer (e.g. KEDA Ceramics)</option>
+                        <option value="Client">Client / Consignee</option>
                         <option value="Admin">Admin</option>
                     </select>
                 </div>
 
-                {role === 'Manufacturer' && (
+                {['Manufacturer', 'Client'].includes(role) && (
                     <div style={{ marginBottom: '15px' }}>
-                        <label>Company Name:</label><br />
+                        <label>{role === 'Client' ? 'Client / Consignee Name:' : 'Company Name:'}</label><br />
                         <input 
                             type="text" 
                             placeholder="e.g. KEDA Ceramics Ltd"

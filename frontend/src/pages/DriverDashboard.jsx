@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
@@ -25,22 +25,28 @@ export default function DriverDashboard() {
 
     const [refreshKey, setRefreshKey] = useState(0);
 
-    const fetchDriverTrips = useCallback(async () => {
-        if (!driverId) return;
-        try {
-            const response = await api.get(`/trips/driver/${driverId}`);
-            setTrips(response.data);
-        } catch (err) {
-            console.error("Error fetching driver trips:", err);
-            setError("Failed to load your assigned routes.");
-        } finally {
-            setLoading(false);
-        }
-    }, [driverId]);
-
     useEffect(() => {
-        fetchDriverTrips();
-    }, [fetchDriverTrips, refreshKey]);
+        let active = true;
+        const loadDriverTrips = async () => {
+            try {
+                const response = await api.get(`/trips/driver/${driverId}`);
+                if (active) {
+                    setTrips(response.data);
+                    setError('');
+                }
+            } catch (err) {
+                console.error("Error fetching driver trips:", err);
+                if (active) setError(err.response?.data?.error || "Failed to load your assigned routes.");
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        loadDriverTrips();
+        return () => {
+            active = false;
+        };
+    }, [driverId, refreshKey]);
 
     const handleDeliveryNoteUpload = async (e, tripId) => {
         const file = e.target.files[0];

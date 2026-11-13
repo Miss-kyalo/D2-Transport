@@ -3,20 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
-
-// Dummy or actual authenticateToken middleware reference
-// (Make sure this points to your real middleware file or import)
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Access token required' });
-
-    jwt.verify(token, process.env.JWT_SECRET || 'super-secret-key-change-me', (err, user) => {
-        if (err) return res.status(403).json({ error: 'Invalid or expired token' });
-        req.user = user;
-        next();
-    });
-};
+const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
 // Register Endpoint
 router.post('/register', async (req, res) => {
@@ -30,7 +17,6 @@ router.post('/register', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Adjust based on whether your DB uses 'username' or 'name'
         const query = `
             INSERT INTO users (username, password, role, company_name) 
             VALUES ($1, $2, $3, $4) 
@@ -65,7 +51,7 @@ router.post('/login', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user.id, username: user.username, role: user.role },
+            { id: user.id, username: user.username, role: user.role, company_name: user.company_name },
             process.env.JWT_SECRET || 'super-secret-key-change-me',
             { expiresIn: '8h' }
         );
@@ -82,8 +68,8 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// GET /api/auth/manufacturers (Protected with Admin/Auth middleware)
-router.get('/manufacturers', authenticateToken, async (req, res) => {
+// GET /api/auth/manufacturers (Protected)
+router.get('/manufacturers', verifyToken, async (req, res) => {
     try {
         const result = await pool.query(
             "SELECT id, username, company_name FROM users WHERE role = 'Manufacturer' ORDER BY username ASC"
@@ -91,7 +77,20 @@ router.get('/manufacturers', authenticateToken, async (req, res) => {
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching manufacturers:", err.message);
-        res.status(500).json({ message: 'Server error fetching manufacturers' });
+        res.status(500).json({ error: 'Server error fetching manufacturers' });
+    }
+});
+
+// GET /api/auth/users (Admin Only)
+router.get('/users', verifyToken, requireRole('Admin'), async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, username, role, company_name FROM users WHERE role IN ('Driver', 'Manufacturer') ORDER BY username ASC"
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching dashboard users:", err);
+        res.status(500).json({ error: 'Server error fetching dashboard users.' });
     }
 });
 

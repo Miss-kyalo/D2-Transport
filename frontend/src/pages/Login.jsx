@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 export default function Login() {
     const [username, setUsername] = useState('');
@@ -12,7 +12,7 @@ export default function Login() {
         e.preventDefault();
         setError('');
         try {
-            const response = await axios.post('http://localhost:5000/api/auth/login', {
+            const response = await api.post('/auth/login', {
                 username,
                 password
             });
@@ -39,36 +39,39 @@ export default function Login() {
     };
 
     return (
-        <div style={{ maxWidth: '400px', margin: '50px auto', fontFamily: 'sans-serif', padding: '20px', border: '1px solid #ccc', borderRadius: '8px', background: '#1e1e1e', color: '#fff' }}>
-            <h2>D2-Transport Login</h2>
-            {error && <p style={{ color: '#ff6b6b', background: 'rgba(255,0,0,0.1)', padding: '10px', borderRadius: '4px' }}>{error}</p>}
+        <div style={{ maxWidth: '400px', margin: '60px auto', fontFamily: 'sans-serif', padding: '24px', border: '1px solid rgba(184, 155, 106, 0.3)', borderRadius: '8px', background: '#0E1A14', color: '#F8F6F0' }}>
+            <h2 style={{ color: '#F8F6F0', marginTop: 0, textAlign: 'center' }}>D2-Transport Login</h2>
+            <small style={{ color: '#B89B6A', display: 'block', textAlign: 'center', marginBottom: '20px' }}>Secure 3PL Enterprise Portal</small>
+            
+            {error && <p style={{ color: '#ff6b6b', background: 'rgba(255,0,0,0.12)', padding: '10px', borderRadius: '4px', fontSize: '0.9em' }}>{error}</p>}
+            
             <form onSubmit={handleLogin}>
                 <div style={{ marginBottom: '15px' }}>
-                    <label>Username:</label><br />
+                    <label style={{ fontSize: '0.85em', color: '#C8C5BC' }}>Username:</label><br />
                     <input 
                         type="text" 
                         value={username} 
                         onChange={(e) => setUsername(e.target.value)} 
                         required 
-                        style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px' }}
+                        style={{ width: '100%', padding: '10px', marginTop: '5px', background: '#16261E', color: '#fff', border: '1px solid #444', borderRadius: '4px', boxSizing: 'border-box' }}
                     />
                 </div>
-                <div style={{ marginBottom: '15px' }}>
-                    <label>Password:</label><br />
+                <div style={{ marginBottom: '20px' }}>
+                    <label style={{ fontSize: '0.85em', color: '#C8C5BC' }}>Password:</label><br />
                     <input 
                         type="password" 
                         value={password} 
                         onChange={(e) => setPassword(e.target.value)} 
                         required 
-                        style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px' }}
+                        style={{ width: '100%', padding: '10px', marginTop: '5px', background: '#16261E', color: '#fff', border: '1px solid #444', borderRadius: '4px', boxSizing: 'border-box' }}
                     />
                 </div>
-                <button type="submit" style={{ width: '100%', padding: '10px', background: '#007BFF', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                <button type="submit" style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
                     Login
                 </button>
             </form>
-            <p style={{ marginTop: '15px', textAlign: 'center' }}>
-                Don't have an account? <Link to="/register" style={{ color: '#4dabf7' }}>Register here</Link>
+            <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9em', color: '#C8C5BC' }}>
+                Don't have an account? <Link to="/register" style={{ color: '#B89B6A', fontWeight: 'bold' }}>Register here</Link>
             </p>
         </div>
     );

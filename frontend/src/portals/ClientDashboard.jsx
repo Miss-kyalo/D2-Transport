@@ -13,17 +13,23 @@ export default function ClientDashboard() {
     const user = userString ? JSON.parse(userString) : null;
 
     useEffect(() => {
-        // Fetch public or client-specific dispatches
-        api.get('/trips')
-            .then(res => {
-                // Filter trips where user is the consignee or show active pool
-                setIncomingShipments(res.data);
-            })
-            .catch(err => {
+        let active = true;
+        const loadShipments = async () => {
+            try {
+                const res = await api.get('/trips/client/my-trips');
+                if (active) setIncomingShipments(res.data);
+            } catch (err) {
                 console.error("Error loading client shipments:", err);
-                setError("Failed to load incoming shipments.");
-            })
-            .finally(() => setLoading(false));
+                if (active) setError(err.response?.data?.error || "Failed to load incoming shipments.");
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        loadShipments();
+        return () => {
+            active = false;
+        };
     }, []);
 
     const handleQuickTrack = (e) => {

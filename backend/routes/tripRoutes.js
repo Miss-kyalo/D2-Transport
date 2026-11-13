@@ -18,8 +18,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.use(verifyToken);
-
 // ==========================================
 // 1. PUBLIC QR TRACKING (No Auth Required)
 // ==========================================
@@ -81,8 +79,11 @@ router.get('/public/track/:trackingCode', async (req, res) => {
     }
 });
 
+// Protect all subsequent trip routes
+router.use(verifyToken);
+
 // ==========================================
-// 2. MANUFACTURER PORTAL ROUTES
+// 2. PORTAL SPECIFIC ROUTES (Manufacturer & Client)
 // ==========================================
 router.get('/manufacturer/my-trips', requireRole('Manufacturer'), async (req, res) => {
     try {
@@ -99,6 +100,23 @@ router.get('/manufacturer/my-trips', requireRole('Manufacturer'), async (req, re
     } catch (err) {
         console.error("Error fetching manufacturer trips:", err);
         res.status(500).json({ error: "Server error fetching manufacturer dispatches.", details: err.message });
+    }
+});
+
+router.get('/client/my-trips', requireRole('Client'), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, tracking_code, origin, destination, cargo_description,
+                    initial_weight, final_weight, status, consignee_name
+             FROM trips
+             WHERE LOWER(BTRIM(consignee_name)) IN (LOWER(BTRIM($1)), LOWER(BTRIM($2)))
+             ORDER BY id DESC`,
+            [req.user.username, req.user.company_name || req.user.username]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching client trips:", err);
+        res.status(500).json({ error: "Server error fetching client shipments." });
     }
 });
 
@@ -196,7 +214,6 @@ router.post('/', requireRole('Admin'), async (req, res) => {
     }
 });
 
-// Admin resolves flagged discrepancy
 router.post('/:id/resolve-discrepancy', requireRole('Admin'), async (req, res) => {
     const client = await pool.connect();
     try {
