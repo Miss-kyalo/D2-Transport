@@ -1,109 +1,93 @@
 const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const pool = require('../config/db');
+const upload = require('../middleware/uploadMiddleware');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
+const router = express.Router();
 const SHRINKAGE_TOLERANCE_TONS = 0.5;
+const FUEL_LITERS_PER_KM = 0.78;
+const FUEL_COST_PER_LITER = 165;
 
-// Configure Multer storage for uploaded manufacturer delivery notes
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/'); // Ensure this folder exists in your backend root
-    },
-    filename: (req, file, cb) => {
-        cb(null, `delivery-note-${Date.now()}${path.extname(file.originalname)}`);
-    }
-});
-const upload = multer({ storage });
+function rollback(client) {
+    return client.query('ROLLBACK').catch(() => {});
+}
 
-// ==========================================
-// 1. PUBLIC QR TRACKING (No Auth Required)
-// ==========================================
 router.get('/public/track/:trackingCode', async (req, res) => {
     try {
-        const { trackingCode } = req.params;
-
-        const tripRes = await pool.query(
+        const tripResult = await pool.query(
             `SELECT t.id, t.tracking_code, t.origin, t.destination, t.cargo_description,
                     t.initial_weight, t.final_weight, t.variance_tons, t.status,
                     t.consignee_name, t.client_received_stamp, t.client_stamp_notes,
-                    t.delivery_note_url, t.ocr_extracted_client, t.ocr_security_stamp_detected,
-                    t.created_at,
+                    t.delivery_note_url, t.ocr_extracted_client,
+                    t.ocr_extracted_destination, t.ocr_security_stamp_detected, t.created_at,
                     m.company_name AS manufacturer_name, m.username AS shipper_contact,
                     tr.plate_number AS active_plate, tr.model AS active_truck_model,
                     d.username AS active_driver_name
              FROM trips t
-             LEFT JOIN users m ON t.manufacturer_id = m.id
-             LEFT JOIN trucks tr ON t.truck_id = tr.id
-             LEFT JOIN users d ON t.driver_id = d.id
+             LEFT JOIN users m ON m.id = t.manufacturer_id
+             LEFT JOIN trucks tr ON tr.id = t.truck_id
+             LEFT JOIN users d ON d.id = t.driver_id
              WHERE UPPER(t.tracking_code) = UPPER($1)`,
-            [trackingCode]
+            [req.params.trackingCode]
         );
+        const trip = tripResult.rows[0];
 
-        if (tripRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Shipment not found. Check your tracking code.' });
+        if (!trip) {
+            return res.status(404).json({ error: 'Shipment not found.' });
         }
-        const trip = tripRes.rows[0];
 
-        // Fetch Chain-of-Custody Legs
-        const legsRes = await pool.query(
-            `SELECT l.*, tr.plate_number, tr.model, u.username AS driver_name
-             FROM trip_legs l
-             LEFT JOIN trucks tr ON l.truck_id = tr.id
-             LEFT JOIN users u ON l.driver_id = u.id
-             WHERE l.trip_id = $1
-             ORDER BY l.leg_number ASC`,
-            [trip.id]
-        );
-
-        // Fetch Incident & Dispatch Timeline
-        const incidentsRes = await pool.query(
-            `SELECT i.*, u.username AS reported_by_name
-             FROM trip_incidents i
-             LEFT JOIN users u ON i.reported_by = u.id
-             WHERE i.trip_id = $1
-             ORDER BY i.created_at ASC`,
-            [trip.id]
-        );
+        const [legs, incidents] = await Promise.all([
+            pool.query(
+                `SELECT l.*, tr.plate_number, tr.model, u.username AS driver_name
+                 FROM trip_legs l
+                 LEFT JOIN trucks tr ON tr.id = l.truck_id
+                 LEFT JOIN users u ON u.id = l.driver_id
+                 WHERE l.trip_id = $1
+                 ORDER BY l.leg_number`,
+                [trip.id]
+            ),
+            pool.query(
+                `SELECT i.*, u.username AS reported_by_name
+                 FROM trip_incidents i
+                 LEFT JOIN users u ON u.id = i.reported_by
+                 WHERE i.trip_id = $1
+                 ORDER BY i.created_at`,
+                [trip.id]
+            )
+        ]);
 
         res.json({
             trip,
-            legs: legsRes.rows,
-            incidents: incidentsRes.rows
+            legs: legs.rows,
+            incidents: incidents.rows
         });
-    } catch (err) {
-        console.error("Error loading public tracking data:", err);
-        res.status(500).json({ error: 'Server error loading tracking data.', details: err.message });
+    } catch (error) {
+        console.error('Failed to load public tracking data:', error);
+        res.status(500).json({ error: 'Server error loading tracking data.' });
     }
 });
 
-// Protect all subsequent trip routes
 router.use(verifyToken);
 
-// ==========================================
-// 2. PORTAL SPECIFIC ROUTES (Manufacturer & Client)
-// ==========================================
 router.get('/manufacturer/my-trips', requireRole('Manufacturer'), async (req, res) => {
     try {
-        const query = `
-            SELECT t.*, tr.plate_number, u.username AS driver_name 
-            FROM trips t
-            LEFT JOIN trucks tr ON t.truck_id = tr.id
-            LEFT JOIN users u ON t.driver_id = u.id
-            WHERE t.manufacturer_id = $1
-            ORDER BY t.id DESC;
-        `;
-        const result = await pool.query(query, [req.user.id]);
+        const result = await pool.query(
+            `SELECT t.*, tr.plate_number, u.username AS driver_name
+             FROM trips t
+             LEFT JOIN trucks tr ON tr.id = t.truck_id
+             LEFT JOIN users u ON u.id = t.driver_id
+             WHERE t.manufacturer_id = $1
+             ORDER BY t.id DESC`,
+            [req.user.id]
+        );
         res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching manufacturer trips:", err);
-        res.status(500).json({ error: "Server error fetching manufacturer dispatches.", details: err.message });
+    } catch (error) {
+        console.error('Failed to fetch manufacturer trips:', error);
+        res.status(500).json({ error: 'Server error fetching manufacturer dispatches.' });
     }
 });
 
-router.get('/client/my-trips', requireRole('Client'), async (req, res) => {
+router.get('/client/my-trips', requireRole('Client', 'SpotClient'), async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT id, tracking_code, origin, destination, cargo_description,
@@ -114,386 +98,546 @@ router.get('/client/my-trips', requireRole('Client'), async (req, res) => {
             [req.user.username, req.user.company_name || req.user.username]
         );
         res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching client trips:", err);
-        res.status(500).json({ error: "Server error fetching client shipments." });
+    } catch (error) {
+        console.error('Failed to fetch client trips:', error);
+        res.status(500).json({ error: 'Server error fetching client shipments.' });
     }
 });
 
-// ==========================================
-// 3. ADMIN TRIP OVERVIEW & DISPATCH
-// ==========================================
-router.get('/', requireRole('Admin'), async (req, res) => {
-    try {
-        const query = `
-            SELECT t.*, tr.plate_number, u.username as driver_name, m.company_name as manufacturer_name
-            FROM trips t
-            LEFT JOIN trucks tr ON t.truck_id = tr.id
-            LEFT JOIN users u ON t.driver_id = u.id
-            LEFT JOIN users m ON t.manufacturer_id = m.id
-            ORDER BY t.id DESC;
-        `;
-        const result = await pool.query(query);
-        res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching trips:", err);
-        res.status(500).json({ error: "Server error fetching trips.", details: err.message });
+router.get(
+    '/',
+    requireRole('Admin', 'Dispatcher', 'FleetManager', 'Accounts_Payable', 'Accounts_Receivable'),
+    async (_req, res) => {
+        try {
+            const result = await pool.query(
+                `SELECT t.*, tr.plate_number, u.username AS driver_name,
+                        m.company_name AS manufacturer_name
+                 FROM trips t
+                 LEFT JOIN trucks tr ON tr.id = t.truck_id
+                 LEFT JOIN users u ON u.id = t.driver_id
+                 LEFT JOIN users m ON m.id = t.manufacturer_id
+                 ORDER BY t.id DESC`
+            );
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Failed to fetch trips:', error);
+            res.status(500).json({ error: 'Server error fetching trips.' });
+        }
     }
-});
+);
 
-router.post('/', requireRole('Admin'), async (req, res) => {
+router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
+    const {
+        truck_id,
+        driver_id,
+        manufacturer_id,
+        consignee_name,
+        consignee_phone,
+        origin,
+        destination,
+        cargo_description,
+        cargo_type = 'General',
+        initial_weight,
+        distance_km = 0,
+        is_spot_market = false,
+        spot_security_checkpoints = [],
+        fuel_partner_name = 'TotalEnergies',
+        lpo_number
+    } = req.body;
+
+    const initialWeight = Number(initial_weight);
+    const distanceKm = Number(distance_km);
+    if (
+        !truck_id ||
+        !driver_id ||
+        !origin ||
+        !destination ||
+        !cargo_description ||
+        !Number.isFinite(initialWeight) ||
+        !Number.isFinite(distanceKm)
+    ) {
+        return res.status(400).json({ error: 'Missing required trip scheduling details.' });
+    }
+    if (initialWeight <= 0 || distanceKm < 0) {
+        return res.status(400).json({ error: 'Weight must be positive and distance cannot be negative.' });
+    }
+
     const client = await pool.connect();
     try {
-        const { 
-            truck_id, 
-            driver_id, 
-            manufacturer_id, 
-            consignee_name, 
-            consignee_phone, 
-            origin, 
-            destination, 
-            cargo_description, 
-            initial_weight 
-        } = req.body;
-
-        if (!truck_id || !driver_id || !origin || !destination || !cargo_description || !initial_weight) {
-            return res.status(400).json({ error: "Missing required trip scheduling details." });
-        }
-        if (!(parseFloat(initial_weight) > 0)) {
-            return res.status(400).json({ error: "Initial weight must be greater than zero." });
-        }
-
         await client.query('BEGIN');
 
-        const truck = await client.query('SELECT status, capacity_tons FROM trucks WHERE id = $1 FOR UPDATE', [truck_id]);
-        if (truck.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: "Truck not found." });
-        }
-        if (truck.rows[0].status !== 'Available') {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: `Truck is not available (${truck.rows[0].status}).` });
-        }
-        if (parseFloat(initial_weight) > parseFloat(truck.rows[0].capacity_tons)) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: "Cargo weight exceeds truck capacity." });
-        }
-
-        const driver = await client.query("SELECT 1 FROM users WHERE id = $1 AND role = 'Driver'", [driver_id]);
-        if (driver.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: "Selected user is not a valid driver." });
-        }
-
-        const tracking_code = `D2-${Math.floor(100000 + Math.random() * 900000)}`;
-
-        const result = await client.query(
-            `INSERT INTO trips (truck_id, driver_id, admin_id, manufacturer_id, consignee_name, consignee_phone, origin, destination, cargo_description, initial_weight, tracking_code, status) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Scheduled') 
-             RETURNING *;`,
-            [truck_id, driver_id, req.user.id, manufacturer_id || null, consignee_name || null, consignee_phone || null, origin, destination, cargo_description, initial_weight, tracking_code]
+        const truckResult = await client.query(
+            `SELECT status, capacity_tons FROM trucks WHERE id = $1 FOR UPDATE`,
+            [truck_id]
         );
-        const trip = result.rows[0];
+        const truck = truckResult.rows[0];
+        if (!truck) {
+            await rollback(client);
+            return res.status(404).json({ error: 'Truck not found.' });
+        }
+        if (truck.status !== 'Available') {
+            await rollback(client);
+            return res.status(400).json({ error: `Truck is not available (${truck.status}).` });
+        }
+        if (initialWeight > Number(truck.capacity_tons)) {
+            await rollback(client);
+            return res.status(400).json({ error: 'Cargo weight exceeds truck capacity.' });
+        }
+
+        const driverResult = await client.query(
+            `SELECT 1 FROM users WHERE id = $1 AND role = 'Driver' AND onboarding_status = 'Active'`,
+            [driver_id]
+        );
+        if (!driverResult.rows[0]) {
+            await rollback(client);
+            return res.status(400).json({ error: 'Selected driver is invalid or inactive.' });
+        }
+
+        const estimatedFuel = Number((distanceKm * FUEL_LITERS_PER_KM).toFixed(2));
+        const trackingCode = `D2-${Math.floor(100000 + Math.random() * 900000)}`;
+        const status = is_spot_market ? 'Awaiting_50_Percent_Deposit' : 'Scheduled';
+        const tripResult = await client.query(
+            `INSERT INTO trips (
+                truck_id, driver_id, manufacturer_id, consignee_name, consignee_phone,
+                origin, destination, cargo_description, cargo_type, initial_weight,
+                distance_km, estimated_fuel_liters, tracking_code, status,
+                is_spot_market, spot_security_checkpoints
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+             RETURNING *`,
+            [
+                truck_id,
+                driver_id,
+                manufacturer_id || null,
+                consignee_name || null,
+                consignee_phone || null,
+                origin.trim(),
+                destination.trim(),
+                cargo_description.trim(),
+                cargo_type,
+                initialWeight,
+                distanceKm,
+                estimatedFuel,
+                trackingCode,
+                status,
+                Boolean(is_spot_market),
+                JSON.stringify(spot_security_checkpoints)
+            ]
+        );
+        const trip = tripResult.rows[0];
 
         await client.query(
-            `INSERT INTO trip_legs (trip_id, leg_number, truck_id, driver_id, transfer_weight_tons, status)
-             VALUES ($1, 1, $2, $3, $4, 'Active')`,
-            [trip.id, truck_id, driver_id, initial_weight]
+            `INSERT INTO trip_legs (trip_id, leg_number, truck_id, driver_id, transfer_weight_tons)
+             VALUES ($1, 1, $2, $3, $4)`,
+            [trip.id, truck_id, driver_id, initialWeight]
         );
-
-        await client.query("UPDATE trucks SET status = 'In-Transit' WHERE id = $1", [truck_id]);
-
+        await client.query(
+            `INSERT INTO fuel_lpos (
+                trip_id, partner_name, lpo_number, expected_liters,
+                cost_per_liter, total_lpo_cost
+             ) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+                trip.id,
+                fuel_partner_name,
+                lpo_number || `LPO-${trackingCode}`,
+                estimatedFuel,
+                FUEL_COST_PER_LITER,
+                Number((estimatedFuel * FUEL_COST_PER_LITER).toFixed(2))
+            ]
+        );
+        await client.query(`UPDATE trucks SET status = 'In-Transit' WHERE id = $1`, [truck_id]);
         await client.query('COMMIT');
-        res.status(201).json({ message: "Trip scheduled successfully with QR tracking", trip });
-    } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error("Error scheduling trip:", err);
-        res.status(500).json({ error: "Server error scheduling trip.", details: err.message });
+        res.status(201).json({ message: 'Trip scheduled successfully.', trip });
+    } catch (error) {
+        await rollback(client);
+        console.error('Failed to schedule trip:', error);
+        res.status(500).json({ error: 'Server error scheduling trip.' });
     } finally {
         client.release();
     }
 });
 
-router.post('/:id/resolve-discrepancy', requireRole('Admin'), async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { id } = req.params;
-        const { resolution_notes } = req.body;
+router.post(
+    '/:id/resolve-discrepancy',
+    requireRole('Admin', 'Dispatcher'),
+    async (req, res) => {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const tripResult = await client.query(
+                `SELECT * FROM trips WHERE id = $1 FOR UPDATE`,
+                [req.params.id]
+            );
+            const trip = tripResult.rows[0];
+            if (!trip) {
+                await rollback(client);
+                return res.status(404).json({ error: 'Trip not found.' });
+            }
+            if (trip.status !== 'Flagged-Discrepancy') {
+                await rollback(client);
+                return res.status(400).json({ error: 'Trip is not flagged for discrepancy.' });
+            }
 
-        await client.query('BEGIN');
-
-        const tripQuery = await client.query('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [id]);
-        if (tripQuery.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: "Trip not found." });
+            const result = await client.query(
+                `UPDATE trips
+                 SET status = 'Completed',
+                     handover_notes = CONCAT(
+                        COALESCE(handover_notes, ''),
+                        ' [Discrepancy resolved: ', $1, ']'
+                     )
+                 WHERE id = $2
+                 RETURNING *`,
+                [req.body.resolution_notes || 'Approved', trip.id]
+            );
+            await client.query(`UPDATE trucks SET status = 'Available' WHERE id = $1`, [trip.truck_id]);
+            await client.query('COMMIT');
+            res.json({ message: 'Discrepancy resolved.', trip: result.rows[0] });
+        } catch (error) {
+            await rollback(client);
+            console.error('Failed to resolve discrepancy:', error);
+            res.status(500).json({ error: 'Server error resolving discrepancy.' });
+        } finally {
+            client.release();
         }
-        const trip = tripQuery.rows[0];
-
-        if (trip.status !== 'Flagged-Discrepancy') {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: "Trip is not in a flagged discrepancy state." });
-        }
-
-        const result = await client.query(
-            `UPDATE trips 
-             SET status = 'Completed', 
-                 handover_notes = CONCAT(COALESCE(handover_notes, ''), ' [Discrepancy Resolved by Admin: ', $1, ']')
-             WHERE id = $2 
-             RETURNING *;`,
-            [resolution_notes || 'Manually approved', id]
-        );
-
-        await client.query("UPDATE trucks SET status = 'Available' WHERE id = $1", [trip.truck_id]);
-
-        await client.query('COMMIT');
-        res.json({ message: "Discrepancy resolved and truck released successfully.", trip: result.rows[0] });
-    } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error("Error resolving discrepancy:", err);
-        res.status(500).json({ error: "Server error resolving discrepancy.", details: err.message });
-    } finally {
-        client.release();
     }
-});
+);
 
-// ==========================================
-// 4. DRIVER PORTAL & WORKFLOW
-// ==========================================
 router.get('/driver/:driverId', requireRole('Driver'), async (req, res) => {
+    if (String(req.user.id) !== String(req.params.driverId)) {
+        return res.status(403).json({ error: 'You can only view your own trips.' });
+    }
+
     try {
-        const { driverId } = req.params;
-        if (String(req.user.id) !== String(driverId)) {
-            return res.status(403).json({ error: "You can only view your own trips." });
-        }
-        const query = `
-            SELECT t.*, tr.plate_number, tr.model 
-            FROM trips t
-            LEFT JOIN trucks tr ON t.truck_id = tr.id
-            WHERE t.driver_id = $1
-            ORDER BY t.id DESC;
-        `;
-        const result = await pool.query(query, [driverId]);
+        const result = await pool.query(
+            `SELECT t.*, tr.plate_number, tr.model
+             FROM trips t
+             LEFT JOIN trucks tr ON tr.id = t.truck_id
+             WHERE t.driver_id = $1
+             ORDER BY t.id DESC`,
+            [req.user.id]
+        );
         res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching driver trips:", err);
-        res.status(500).json({ error: "Server error fetching driver trips.", details: err.message });
+    } catch (error) {
+        console.error('Failed to fetch driver trips:', error);
+        res.status(500).json({ error: 'Server error fetching driver trips.' });
     }
 });
 
 router.patch('/:id/location', requireRole('Driver'), async (req, res) => {
+    const lat = Number(req.body.lat);
+    const lng = Number(req.body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return res.status(400).json({ error: 'Valid latitude and longitude are required.' });
+    }
+
     try {
-        const { id } = req.params;
-        const { lat, lng } = req.body;
-
         const result = await pool.query(
-            `UPDATE trip_legs 
+            `UPDATE trip_legs l
              SET current_lat = $1, current_lng = $2, last_location_update = CURRENT_TIMESTAMP
-             WHERE trip_id = $3 AND status = 'Active'
-             RETURNING *`,
-            [lat, lng, id]
+             FROM trips t
+             WHERE l.trip_id = t.id
+               AND t.id = $3
+               AND t.driver_id = $4
+               AND l.status = 'Active'
+             RETURNING l.*`,
+            [lat, lng, req.params.id, req.user.id]
         );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'No active leg found for this trip.' });
+        if (!result.rows[0]) {
+            return res.status(404).json({ error: 'No active assigned trip leg found.' });
         }
         res.json(result.rows[0]);
-    } catch (err) {
-        console.error("Error updating GPS:", err);
-        res.status(500).json({ error: 'Server error updating GPS coordinates.', details: err.message });
+    } catch (error) {
+        console.error('Failed to update trip location:', error);
+        res.status(500).json({ error: 'Server error updating location.' });
     }
 });
 
-router.post('/:id/incidents', verifyToken, async (req, res) => {
+router.post('/:id/incidents', requireRole('Driver', 'Admin', 'Dispatcher'), async (req, res) => {
+    const { incident_type, location_name, description } = req.body;
+    if (!incident_type || !location_name || !description) {
+        return res.status(400).json({ error: 'Incident type, location, and description are required.' });
+    }
+
     try {
-        const { id } = req.params;
-        const { incident_type, location_name, description } = req.body;
-
-        const activeLeg = await pool.query(
-            "SELECT id FROM trip_legs WHERE trip_id = $1 AND status = 'Active' LIMIT 1",
-            [id]
+        const result = await pool.query(
+            `WITH active_leg AS (
+                SELECT l.id
+                FROM trip_legs l
+                JOIN trips t ON t.id = l.trip_id
+                WHERE l.trip_id = $1
+                  AND l.status = 'Active'
+                  AND ($2 <> 'Driver' OR t.driver_id = $3)
+                LIMIT 1
+             )
+             INSERT INTO trip_incidents (
+                trip_id, leg_id, incident_type, location_name, description, reported_by
+             )
+             SELECT $1, id, $4, $5, $6, $3
+             FROM active_leg
+             RETURNING *`,
+            [
+                req.params.id,
+                req.user.role,
+                req.user.id,
+                incident_type,
+                location_name,
+                description
+            ]
         );
-        const leg_id = activeLeg.rows[0]?.id || null;
-
-        const incident = await pool.query(
-            `INSERT INTO trip_incidents (trip_id, leg_id, incident_type, location_name, description, reported_by)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [id, leg_id, incident_type, location_name, description, req.user.id]
-        );
-
-        res.status(201).json(incident.rows[0]);
-    } catch (err) {
-        console.error("Error logging incident:", err);
-        res.status(500).json({ error: 'Server error logging incident.', details: err.message });
+        if (!result.rows[0]) {
+            return res.status(404).json({ error: 'No active trip or leg is assigned to you.' });
+        }
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error('Failed to report incident:', error);
+        res.status(500).json({ error: 'Server error logging incident.' });
     }
 });
 
-router.post('/:id/transship', requireRole('Admin'), async (req, res) => {
+router.post('/:id/transship', requireRole('Admin', 'Dispatcher'), async (req, res) => {
+    const {
+        new_truck_id,
+        new_driver_id,
+        location_name,
+        transfer_weight_tons,
+        notes
+    } = req.body;
+    const transferWeight = Number(transfer_weight_tons);
+    if (!new_truck_id || !new_driver_id || !location_name || !(transferWeight > 0)) {
+        return res.status(400).json({ error: 'A truck, driver, location, and transfer weight are required.' });
+    }
+
     const client = await pool.connect();
     try {
-        const { id } = req.params;
-        const { new_truck_id, new_driver_id, location_name, transfer_weight_tons, notes } = req.body;
-
         await client.query('BEGIN');
-
-        const currentLegRes = await client.query(
-            "SELECT * FROM trip_legs WHERE trip_id = $1 AND status = 'Active' ORDER BY leg_number DESC LIMIT 1",
-            [id]
+        const currentLegResult = await client.query(
+            `SELECT * FROM trip_legs
+             WHERE trip_id = $1 AND status = 'Active'
+             ORDER BY leg_number DESC
+             LIMIT 1
+             FOR UPDATE`,
+            [req.params.id]
         );
-        if (currentLegRes.rows.length === 0) {
-            await client.query('ROLLBACK');
+        const currentLeg = currentLegResult.rows[0];
+        if (!currentLeg) {
+            await rollback(client);
             return res.status(400).json({ error: 'No active leg available to transship.' });
         }
-        const currentLeg = currentLegRes.rows[0];
 
-        await client.query(
-            "UPDATE trip_legs SET status = 'Broken-Down', ended_at = CURRENT_TIMESTAMP WHERE id = $1",
-            [currentLeg.id]
+        const replacementTruck = await client.query(
+            `SELECT status FROM trucks WHERE id = $1 FOR UPDATE`,
+            [new_truck_id]
         );
-        if (currentLeg.truck_id) {
-            await client.query("UPDATE trucks SET status = 'Maintenance' WHERE id = $1", [currentLeg.truck_id]);
+        const replacementDriver = await client.query(
+            `SELECT 1 FROM users
+             WHERE id = $1 AND role = 'Driver' AND onboarding_status = 'Active'`,
+            [new_driver_id]
+        );
+        if (
+            replacementTruck.rows[0]?.status !== 'Available' ||
+            !replacementDriver.rows[0]
+        ) {
+            await rollback(client);
+            return res.status(400).json({ error: 'Replacement truck or driver is unavailable.' });
         }
 
-        const nextLegNumber = currentLeg.leg_number + 1;
-        const newLegRes = await client.query(
-            `INSERT INTO trip_legs (trip_id, leg_number, truck_id, driver_id, transfer_weight_tons, status)
-             VALUES ($1, $2, $3, $4, $5, 'Active') RETURNING *`,
-            [id, nextLegNumber, new_truck_id, new_driver_id, transfer_weight_tons]
+        await client.query(
+            `UPDATE trip_legs
+             SET status = 'Broken-Down', ended_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [currentLeg.id]
+        );
+        await client.query(
+            `UPDATE trucks SET status = 'Maintenance' WHERE id = $1`,
+            [currentLeg.truck_id]
         );
 
-        await client.query(
-            "UPDATE trips SET truck_id = $1, driver_id = $2 WHERE id = $3",
-            [new_truck_id, new_driver_id, id]
+        const newLegResult = await client.query(
+            `INSERT INTO trip_legs (
+                trip_id, leg_number, truck_id, driver_id, transfer_weight_tons, status
+             ) VALUES ($1, $2, $3, $4, $5, 'Active')
+             RETURNING *`,
+            [
+                currentLeg.trip_id,
+                currentLeg.leg_number + 1,
+                new_truck_id,
+                new_driver_id,
+                transferWeight
+            ]
         );
-        await client.query("UPDATE trucks SET status = 'In-Transit' WHERE id = $1", [new_truck_id]);
+        const newLeg = newLegResult.rows[0];
 
         await client.query(
-            `INSERT INTO trip_incidents (trip_id, leg_id, incident_type, location_name, description, reported_by, resolved_at)
-             VALUES ($1, $2, 'Transshipment', $3, $4, $5, CURRENT_TIMESTAMP)`,
-            [id, newLegRes.rows[0].id, location_name, notes || `Cargo transferred to rescue vehicle on Leg ${nextLegNumber}.`, req.user.id]
+            `UPDATE trips SET truck_id = $1, driver_id = $2 WHERE id = $3`,
+            [new_truck_id, new_driver_id, currentLeg.trip_id]
+        );
+        await client.query(`UPDATE trucks SET status = 'In-Transit' WHERE id = $1`, [new_truck_id]);
+        await client.query(
+            `INSERT INTO trip_incidents (
+                trip_id, leg_id, incident_type, location_name, description, reported_by, resolved_at
+             ) VALUES ($1, $2, 'Transshipment', $3, $4, $5, CURRENT_TIMESTAMP)`,
+            [
+                currentLeg.trip_id,
+                newLeg.id,
+                location_name,
+                notes || `Cargo transferred on leg ${newLeg.leg_number}.`,
+                req.user.id
+            ]
         );
 
         await client.query('COMMIT');
-        res.json({ message: 'Transshipment completed successfully', newLeg: newLegRes.rows[0] });
-    } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error("Error executing transshipment:", err);
-        res.status(500).json({ error: 'Server error executing transshipment.', details: err.message });
+        res.json({ message: 'Transshipment completed.', newLeg });
+    } catch (error) {
+        await rollback(client);
+        console.error('Failed to transship trip:', error);
+        res.status(500).json({ error: 'Server error executing transshipment.' });
     } finally {
         client.release();
     }
 });
 
 router.post('/:id/upload-note', requireRole('Driver'), upload.single('delivery_note'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'Delivery note image or PDF is required.' });
+    }
+
     try {
-        const { id } = req.params;
-        if (!req.file) {
-            return res.status(400).json({ error: "Delivery note image or PDF file is required." });
-        }
-
-        const fileUrl = `/uploads/${req.file.filename}`;
-
-        const tripRes = await pool.query('SELECT * FROM trips WHERE id = $1 AND driver_id = $2', [id, req.user.id]);
-        if (tripRes.rows.length === 0) {
-            return res.status(404).json({ error: "Trip not found or not assigned to you." });
-        }
-        const trip = tripRes.rows[0];
-
-        const extractedClient = trip.consignee_name || "Verified Client";
-        const extractedDestination = trip.destination;
-        const securityStampDetected = true; 
-
-        if (!securityStampDetected) {
-            return res.status(400).json({ error: "OCR validation failed: No valid manufacturer security stamp detected on document." });
-        }
-
-        const updatedTrip = await pool.query(
-            `UPDATE trips 
-             SET delivery_note_url = $1, 
-                 ocr_extracted_client = $2, 
-                 ocr_extracted_destination = $3, 
-                 ocr_security_stamp_detected = TRUE, 
-                 status = 'In-Transit'
-             WHERE id = $4 
-             RETURNING *;`,
-            [fileUrl, extractedClient, extractedDestination, id]
+        const result = await pool.query(
+            `UPDATE trips
+             SET delivery_note_url = $1,
+                 ocr_extracted_client = consignee_name,
+                 ocr_extracted_destination = destination,
+                 ocr_security_stamp_detected = TRUE,
+                 status = CASE
+                    WHEN status = 'Scheduled' THEN 'In-Transit'
+                    ELSE status
+                 END
+             WHERE id = $2 AND driver_id = $3 AND status IN ('Scheduled', 'In-Transit')
+             RETURNING *`,
+            [`/uploads/${req.file.filename}`, req.params.id, req.user.id]
         );
-
+        if (!result.rows[0]) {
+            return res.status(404).json({ error: 'Trip not found or not assigned to you.' });
+        }
         res.json({
-            message: "Delivery note uploaded and verified via OCR successfully!",
-            trip: updatedTrip.rows[0],
+            message: 'Delivery note uploaded.',
+            trip: result.rows[0],
             ocr_data: {
-                client: extractedClient,
-                destination: extractedDestination,
-                security_stamp: "Verified"
+                client: result.rows[0].ocr_extracted_client,
+                destination: result.rows[0].ocr_extracted_destination,
+                security_stamp: 'Verified'
             }
         });
-    } catch (err) {
-        console.error("OCR Upload Error:", err);
-        res.status(500).json({ error: "Server error processing delivery note OCR.", details: err.message });
+    } catch (error) {
+        console.error('Failed to upload delivery note:', error);
+        res.status(500).json({ error: 'Server error uploading delivery note.' });
     }
 });
 
+router.patch(
+    '/:id/confirm-deposit',
+    requireRole('Accounts_Payable', 'Accounts_Receivable', 'Admin'),
+    async (req, res) => {
+        try {
+            const result = await pool.query(
+                `UPDATE trips
+                 SET deposit_50_paid = TRUE,
+                     accounts_go_ahead_issued = TRUE,
+                     status = 'Scheduled'
+                 WHERE id = $1
+                   AND is_spot_market = TRUE
+                   AND status = 'Awaiting_50_Percent_Deposit'
+                 RETURNING *`,
+                [req.params.id]
+            );
+            if (!result.rows[0]) {
+                return res.status(404).json({ error: 'Spot-market trip awaiting deposit not found.' });
+            }
+            res.json({ message: 'Deposit verified. Driver may proceed.', trip: result.rows[0] });
+        } catch (error) {
+            console.error('Failed to confirm deposit:', error);
+            res.status(500).json({ error: 'Server error confirming deposit.' });
+        }
+    }
+);
+
 router.post('/:id/handover', requireRole('Driver'), async (req, res) => {
+    const finalWeight = Number(req.body.final_weight);
+    if (!Number.isFinite(finalWeight) || finalWeight < 0) {
+        return res.status(400).json({ error: 'A valid final weight is required.' });
+    }
+    if (!req.body.client_received_stamp) {
+        return res.status(400).json({ error: 'Client received stamp confirmation is required.' });
+    }
+
     const client = await pool.connect();
     try {
-        const { id } = req.params;
-        const { final_weight, client_received_stamp, client_stamp_notes, handover_notes } = req.body;
-
-        const finalWeight = parseFloat(final_weight);
-        if (!(finalWeight >= 0)) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: "A valid final weight is required." });
-        }
-        if (!client_received_stamp) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: "Client received stamp confirmation is required to close delivery." });
-        }
-
         await client.query('BEGIN');
-
-        const tripQuery = await client.query('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [id]);
-        if (tripQuery.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: "Trip not found." });
+        const tripResult = await client.query(
+            `SELECT * FROM trips WHERE id = $1 FOR UPDATE`,
+            [req.params.id]
+        );
+        const trip = tripResult.rows[0];
+        if (!trip) {
+            await rollback(client);
+            return res.status(404).json({ error: 'Trip not found.' });
         }
-
-        const trip = tripQuery.rows[0];
         if (trip.driver_id !== req.user.id) {
-            await client.query('ROLLBACK');
-            return res.status(403).json({ error: "This trip is not assigned to you." });
+            await rollback(client);
+            return res.status(403).json({ error: 'This trip is not assigned to you.' });
+        }
+        if (!['Scheduled', 'In-Transit'].includes(trip.status)) {
+            await rollback(client);
+            return res.status(400).json({ error: `Trip cannot be handed over from ${trip.status}.` });
         }
 
-        const variance = parseFloat(trip.initial_weight) - finalWeight;
-        const status = variance > SHRINKAGE_TOLERANCE_TONS ? 'Flagged-Discrepancy' : 'Completed';
-
-        const result = await client.query(
-            `UPDATE trips 
-             SET final_weight = $1, 
-                 client_received_stamp = TRUE, 
-                 client_stamp_notes = $2, 
-                 handover_notes = $3, 
-                 variance_tons = $4, 
+        const variance = Number((Number(trip.initial_weight) - finalWeight).toFixed(2));
+        const status = variance > SHRINKAGE_TOLERANCE_TONS
+            ? 'Flagged-Discrepancy'
+            : 'Completed';
+        const updatedTrip = await client.query(
+            `UPDATE trips
+             SET final_weight = $1,
+                 client_received_stamp = TRUE,
+                 client_stamp_notes = $2,
+                 handover_notes = $3,
+                 variance_tons = $4,
                  status = $5
-             WHERE id = $6 
-             RETURNING *;`,
-            [finalWeight, client_stamp_notes || null, handover_notes || null, variance, status, id]
+             WHERE id = $6
+             RETURNING *`,
+            [
+                finalWeight,
+                req.body.client_stamp_notes || null,
+                req.body.handover_notes || null,
+                variance,
+                status,
+                trip.id
+            ]
         );
 
         await client.query(
-            "UPDATE trip_legs SET status = 'Completed', ended_at = CURRENT_TIMESTAMP WHERE trip_id = $1 AND status = 'Active'",
-            [id]
+            `UPDATE trip_legs
+             SET status = 'Completed', ended_at = CURRENT_TIMESTAMP
+             WHERE trip_id = $1 AND status = 'Active'`,
+            [trip.id]
         );
-
         if (status === 'Completed') {
-            await client.query("UPDATE trucks SET status = 'Available' WHERE id = $1", [trip.truck_id]);
+            await client.query(`UPDATE trucks SET status = 'Available' WHERE id = $1`, [trip.truck_id]);
+            if (trip.manufacturer_id) {
+                await client.query(
+                    `INSERT INTO invoices (trip_id, client_id, amount_kes, due_date)
+                     VALUES ($1, $2, 150000.00, CURRENT_TIMESTAMP + INTERVAL '30 days')
+                     ON CONFLICT (trip_id) DO NOTHING`,
+                    [trip.id, trip.manufacturer_id]
+                );
+            }
         }
 
         await client.query('COMMIT');
-        res.json({ message: "Handover and client stamp recorded successfully", trip: result.rows[0], variance });
-    } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error("Error submitting handover:", err);
-        res.status(500).json({ error: "Server error during handover.", details: err.message });
+        res.json({ message: 'Handover recorded.', trip: updatedTrip.rows[0], variance });
+    } catch (error) {
+        await rollback(client);
+        console.error('Failed to record handover:', error);
+        res.status(500).json({ error: 'Server error during handover.' });
     } finally {
         client.release();
     }

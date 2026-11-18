@@ -1,53 +1,60 @@
-const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcrypt');
+const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
-// Register Endpoint
-router.post('/register', async (req, res) => {
-    try {
-        const { username, password, role, company_name } = req.body;
-        const validRoles = ['Driver', 'Admin', 'Manufacturer', 'Client'];
-        
-        if (!validRoles.includes(role)) {
-            return res.status(400).json({ error: "Invalid role specified." });
-        }
+const router = express.Router();
+const publicRoles = ['Driver', 'Manufacturer', 'Client', 'SpotClient'];
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        const query = `
-            INSERT INTO users (username, password, role, company_name) 
-            VALUES ($1, $2, $3, $4) 
-            RETURNING id, username, role, company_name;
-        `;
-        const result = await pool.query(query, [username, hashedPassword, role, company_name || username]);
-        
-        res.status(201).json({ message: "User registered successfully", user: result.rows[0] });
-    } catch (err) {
-        if (err.code === '23505') {
-            return res.status(400).json({ error: "Username already taken." });
+router.post('/register', async (req, res) => {
+    const { username, password, role, company_name, email, phone_number } = req.body;
+
+    if (!username || !password || !publicRoles.includes(role)) {
+        return res.status(400).json({
+            error: 'Username, password, and a valid public role are required.'
+        });
+    }
+
+    try {
+        const passwordHash = await bcrypt.hash(password, 10);
+        const result = await pool.query(
+            `INSERT INTO users (
+                username, email, password_hash, role, company_name, phone_number, onboarding_status
+             ) VALUES ($1, $2, $3, $4, $5, $6, 'Active')
+             RETURNING id, username, role, company_name, email, phone_number`,
+            [username.trim(), email || null, passwordHash, role, company_name || null, phone_number || null]
+        );
+
+        res.status(201).json({
+            message: 'User registered successfully.',
+            user: result.rows[0]
+        });
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ error: 'Username, email, or phone number is already registered.' });
         }
-        console.error("Registration Error:", err);
-        res.status(500).json({ error: "Server error during registration.", details: err.message });
+        console.error('Registration failed:', error);
+        res.status(500).json({ error: 'Server error during registration.' });
     }
 });
 
-// Login Endpoint
 router.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required.' });
+    }
+
     try {
-        const { username, password } = req.body;
         const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-        
-        if (result.rows.length === 0) {
-            return res.status(401).json({ error: "Invalid credentials." });
+        const user = result.rows[0];
+
+        if (!user || !await bcrypt.compare(password, user.password_hash)) {
+            return res.status(401).json({ error: 'Invalid credentials.' });
         }
 
-        const user = result.rows[0];
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(401).json({ error: "Invalid credentials." });
+        if (user.onboarding_status && user.onboarding_status !== 'Active') {
+            return res.status(403).json({ error: `Account is ${user.onboarding_status}. Contact HR.` });
         }
 
         const token = jwt.sign(
@@ -56,42 +63,55 @@ router.post('/login', async (req, res) => {
             { expiresIn: '8h' }
         );
 
-        res.json({ 
-            message: "Login successful", 
-            token, 
-            role: user.role, 
-            user: { id: user.id, username: user.username, role: user.role, company_name: user.company_name } 
+        res.json({
+            token,
+            role: user.role,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                company_name: user.company_name
+            }
         });
-    } catch (err) {
-        console.error("Login Error:", err);
-        res.status(500).json({ error: "Server error during login.", details: err.message });
+    } catch (error) {
+        console.error('Login failed:', error);
+        res.status(500).json({ error: 'Server error during login.' });
     }
 });
 
-// GET /api/auth/manufacturers (Protected)
-router.get('/manufacturers', verifyToken, async (req, res) => {
+router.get('/manufacturers', verifyToken, async (_req, res) => {
     try {
         const result = await pool.query(
-            "SELECT id, username, company_name FROM users WHERE role = 'Manufacturer' ORDER BY username ASC"
+            `SELECT id, username, company_name
+             FROM users
+             WHERE role = 'Manufacturer'
+             ORDER BY username`
         );
         res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching manufacturers:", err.message);
-        res.status(500).json({ error: 'Server error fetching manufacturers' });
+    } catch (error) {
+        console.error('Failed to fetch manufacturers:', error);
+        res.status(500).json({ error: 'Server error fetching manufacturers.' });
     }
 });
 
-// GET /api/auth/users (Admin Only)
-router.get('/users', verifyToken, requireRole('Admin'), async (req, res) => {
-    try {
-        const result = await pool.query(
-            "SELECT id, username, role, company_name FROM users WHERE role IN ('Driver', 'Manufacturer') ORDER BY username ASC"
-        );
-        res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching dashboard users:", err);
-        res.status(500).json({ error: 'Server error fetching dashboard users.' });
+router.get(
+    '/users',
+    verifyToken,
+    requireRole('Admin', 'Dispatcher', 'FleetManager'),
+    async (_req, res) => {
+        try {
+            const result = await pool.query(
+                `SELECT id, username, role, company_name
+                 FROM users
+                 WHERE role IN ('Driver', 'Manufacturer')
+                 ORDER BY username`
+            );
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Failed to fetch dashboard users:', error);
+            res.status(500).json({ error: 'Server error fetching dashboard users.' });
+        }
     }
-});
+);
 
 module.exports = router;
