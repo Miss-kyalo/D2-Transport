@@ -8,6 +8,7 @@ import ManufacturerDashboard from './pages/ManufacturerDashboard';
 import ClientDashboard from './portals/ClientDashboard';
 import PublicTracking from './pages/PublicTracking';
 import PrintableWaybill from './pages/PrintableWaybill';
+import { ADMIN_ROLES, CLIENT_ROLES } from './auth';
 
 export default function App() {
     return (
@@ -31,7 +32,7 @@ export default function App() {
 
                 {/* Protected Admin Dispatch Hub */}
                 <Route path="/admin/*" element={
-                    <ProtectedRoute allowedRole="Admin">
+                    <ProtectedRoute allowedRole={ADMIN_ROLES}>
                         <AdminDashboard />
                     </ProtectedRoute>
                 } />
@@ -44,7 +45,7 @@ export default function App() {
                 } />
 
                 <Route path="/client/*" element={
-                    <ProtectedRoute allowedRole="Client">
+                    <ProtectedRoute allowedRole={CLIENT_ROLES}>
                         <ClientDashboard />
                     </ProtectedRoute>
                 } />

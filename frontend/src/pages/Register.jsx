@@ -20,7 +20,9 @@ export default function Register() {
                 username,
                 password,
                 role,
-                company_name: ['Manufacturer', 'Client'].includes(role) ? companyName : null
+                company_name: ['Manufacturer', 'Client', 'SpotClient'].includes(role)
+                    ? companyName
+                    : null
             });
 
             setSuccess('Registration successful! Redirecting to login...');
@@ -72,13 +74,15 @@ export default function Register() {
                         <option value="Driver">Driver</option>
                         <option value="Manufacturer">Manufacturer (e.g. KEDA Ceramics)</option>
                         <option value="Client">Client / Consignee</option>
-                        <option value="Admin">Admin</option>
+                        <option value="SpotClient">Spot Client / Consignee</option>
                     </select>
                 </div>
 
-                {['Manufacturer', 'Client'].includes(role) && (
+                {['Manufacturer', 'Client', 'SpotClient'].includes(role) && (
                     <div style={{ marginBottom: '15px' }}>
-                        <label>{role === 'Client' ? 'Client / Consignee Name:' : 'Company Name:'}</label><br />
+                        <label>
+                            {role === 'Manufacturer' ? 'Company Name:' : 'Client / Consignee Name:'}
+                        </label><br />
                         <input 
                             type="text" 
                             placeholder="e.g. KEDA Ceramics Ltd"

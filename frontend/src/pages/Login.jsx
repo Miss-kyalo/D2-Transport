@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api';
+import { getRoleHome } from '../auth';
 
 export default function Login() {
     const [username, setUsername] = useState('');
@@ -17,22 +18,18 @@ export default function Login() {
                 password
             });
 
-            localStorage.setItem('token', response.data.token);
-            localStorage.setItem('role', response.data.role);
-            localStorage.setItem('user', JSON.stringify(response.data.user));
-
             const role = response.data.role;
-            if (role === 'Admin') {
-                navigate('/admin');
-            } else if (role === 'Driver') {
-                navigate('/driver');
-            } else if (role === 'Manufacturer') {
-                navigate('/manufacturer');
-            } else if (role === 'Client') {
-                navigate('/client');
-            } else {
-                navigate('/');
+            const destination = getRoleHome(role);
+            if (destination === '/login') {
+                localStorage.clear();
+                setError('Your role does not have a web portal assigned.');
+                return;
             }
+
+            localStorage.setItem('token', response.data.token);
+            localStorage.setItem('role', role);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            navigate(destination);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to login.');
         }
