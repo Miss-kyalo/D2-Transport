@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { getRoleHome } from '../auth';
 
@@ -67,8 +67,8 @@ export default function Login() {
                     Login
                 </button>
             </form>
-            <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9em', color: '#C8C5BC' }}>
-                Don't have an account? <Link to="/register" style={{ color: '#B89B6A', fontWeight: 'bold' }}>Register here</Link>
+            <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.85em', color: '#C8C5BC' }}>
+                Accounts are provisioned by HR. Contact HR if you need access.
             </p>
         </div>
     );

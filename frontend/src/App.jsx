@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
-import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
 import DriverDashboard from './pages/DriverDashboard';
 import ManufacturerDashboard from './pages/ManufacturerDashboard';
@@ -9,14 +8,14 @@ import ClientDashboard from './portals/ClientDashboard';
 import PublicTracking from './pages/PublicTracking';
 import PrintableWaybill from './pages/PrintableWaybill';
 import { ADMIN_ROLES, CLIENT_ROLES } from './auth';
+import Navbar from './components/Navbar';
 
 export default function App() {
     return (
         <Router>
+            <Navbar />
             <Routes>
-                {/* Public & Authentication Routes */}
                 <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
                 
                 {/* Public QR Tracking & Printable Waybill */}
                 <Route path="/track/:trackingCode" element={<PublicTracking />} />
