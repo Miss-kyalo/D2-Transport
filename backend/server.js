@@ -25,3 +25,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 D2-Transport Enterprise ERP backend running on port ${PORT}`);
 });
+const payrollRoutes = require('./routes/payrollRoutes');
+app.use('/api/payroll', payrollRoutes);

@@ -36,6 +36,9 @@ export default function AdminDashboard() {
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
+    const role = localStorage.getItem('role');
+    const canManageTrucks = role === 'Admin' || role === 'FleetManager';
+    const canDispatch = role === 'Admin';
 
     const [refreshKey, setRefreshKey] = useState(0);
     const fetchData = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -50,13 +53,17 @@ export default function AdminDashboard() {
                     api.get('/auth/manufacturers'),
                     api.get('/auth/users')
                 ]);
-                setTrucks(truckRes.data);
-                setTrips(tripRes.data);
-                setManufacturers(mfgRes.data);
-                setDrivers(usersRes.data.filter(u => u.role === 'Driver'));
+                setTrucks(Array.isArray(truckRes.data) ? truckRes.data : []);
+                setTrips(Array.isArray(tripRes.data) ? tripRes.data : []);
+                setManufacturers(Array.isArray(mfgRes.data) ? mfgRes.data : []);
+                setDrivers(
+                    Array.isArray(usersRes.data)
+                        ? usersRes.data.filter((user) => user.role === 'Driver')
+                        : []
+                );
             } catch (err) {
                 console.error("Error fetching data:", err);
-                setError("Failed to load dashboard data.");
+                setError(err.response?.data?.error || 'Failed to load dashboard data.');
             } finally {
                 setLoading(false);
             }
@@ -196,7 +203,7 @@ export default function AdminDashboard() {
                             <label style={{ color: '#C8C5BC', fontSize: '0.85em' }}>Capacity (Tons):</label><br />
                             <input type="number" step="0.01" value={capacityTons} onChange={(e) => setCapacityTons(e.target.value)} required style={{ width: '100%', padding: '8px', background: '#0E1A14', color: '#fff', border: '1px solid #444', borderRadius: '4px', boxSizing: 'border-box' }} />
                         </div>
-                        <button type="submit" style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Add Truck</button>
+                        <button type="submit" disabled={!canManageTrucks} style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', fontWeight: 'bold', cursor: canManageTrucks ? 'pointer' : 'not-allowed', opacity: canManageTrucks ? 1 : 0.55 }}>Add Truck</button>
                     </form>
                 </div>
 
@@ -277,7 +284,7 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
-                        <button type="submit" style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Dispatch Trip & Generate QR</button>
+                        <button type="submit" disabled={!canDispatch} style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', fontWeight: 'bold', cursor: canDispatch ? 'pointer' : 'not-allowed', opacity: canDispatch ? 1 : 0.55 }}>Dispatch Trip & Generate QR</button>
                     </form>
                 </div>
             </div>
@@ -316,6 +323,7 @@ export default function AdminDashboard() {
                                     <td style={{ padding: '10px' }}>
                                         <button
                                             onClick={() => handleResolveDiscrepancy(trip.id)}
+                                            disabled={!canDispatch}
                                             style={{ padding: '5px 10px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em', fontWeight: 'bold' }}
                                         >
                                             Approve & Release Truck
@@ -387,7 +395,7 @@ export default function AdminDashboard() {
                                             Waybill
                                         </button>
                                     )}
-                                    {trip.status === 'In-Transit' && (
+                                    {canDispatch && trip.status === 'In-Transit' && (
                                         <button
                                             onClick={() => {
                                                 setTransshipTripId(trip.id);
@@ -406,7 +414,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Rescue Truck Transshipment Modal */}
-            {transshipTripId && (
+            {canDispatch && transshipTripId && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
                     <div style={{ background: '#16261E', padding: '25px', borderRadius: '8px', width: '440px', border: '1px solid #B89B6A' }}>
                         <h3 style={{ marginTop: 0, color: '#B89B6A' }}>Execute Rescue Transshipment (Trip #{transshipTripId})</h3>
