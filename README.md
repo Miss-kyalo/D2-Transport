@@ -35,8 +35,13 @@ the initial schema has been installed:
 
 ```sh
 cd backend
-node -e "require('dotenv').config(); const fs = require('fs'); const { Client } = require('pg'); const db = new Client({ connectionString: process.env.DATABASE_URL }); (async () => { try { await db.connect(); await db.query(fs.readFileSync('migrations/005_depot_compliance.sql', 'utf8')); console.log('Depot migration applied.'); } catch (err) { console.error(err.message); process.exitCode = 1; } finally { await db.end(); } })();"
+node migrate.js
+node scripts/smokeTest.js
 ```
+
+`migrate.js` applies the depot migration only; the initial schema must already
+be present. The smoke check verifies the compliance helper and table presence,
+not the HTTP Gate-In/Gate-Out flow.
 
 Depot operations are available at `/depot`. Gate-Out checks active holds,
 damage, and cleaning; sanitization and KEPHIS clearance can also be required
