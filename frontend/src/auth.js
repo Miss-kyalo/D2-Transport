@@ -1,6 +1,7 @@
 export const ROLE_HOME = {
     Admin: '/admin',
     FleetManager: '/admin',
+    Mechanic: '/garage/workbench',
     Driver: '/driver',
     Manufacturer: '/manufacturer',
     Client: '/client',

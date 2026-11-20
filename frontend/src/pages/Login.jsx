@@ -31,7 +31,12 @@ export default function Login() {
             localStorage.setItem('user', JSON.stringify(response.data.user));
             navigate(destination);
         } catch (err) {
-            setError(err.response?.data?.error || 'Failed to login.');
+            setError(
+                err.response?.data?.error ||
+                (err.code === 'ERR_NETWORK'
+                    ? 'Cannot reach the API. Start the backend and check its database connection.'
+                    : 'Failed to login.')
+            );
         }
     };
 

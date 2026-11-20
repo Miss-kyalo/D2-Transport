@@ -5,7 +5,7 @@ export default function Navbar() {
     const navigate = useNavigate();
     const token = localStorage.getItem('token');
 
-    if (['/', '/container-depot'].includes(location.pathname) || !token) return null;
+    if (['/', '/container-depot', '/garage'].includes(location.pathname) || !token) return null;
 
     const role = localStorage.getItem('role');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -34,6 +34,12 @@ export default function Navbar() {
                         <Link to="/fleet" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Fleet & Compliance</Link>
                         <Link to="/payroll" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>2026 Payroll</Link>
                     </>
+                )}
+
+                {['Admin', 'Mechanic'].includes(role) && (
+                    <Link to="/garage/workbench" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>
+                        Garage Workbench
+                    </Link>
                 )}
 
                 {['Admin', 'Dispatcher', 'FleetManager', 'Accounts_Receivable'].includes(role) && (

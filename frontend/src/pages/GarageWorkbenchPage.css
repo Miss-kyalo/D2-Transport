@@ -1,0 +1,34 @@
+.garage-workbench {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: calc(100vh - 56px);
+    align-self: stretch;
+    color: #e2e8f0;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: left;
+}
+
+.garage-workbench h1,
+.garage-workbench h2,
+.garage-workbench p {
+    margin-top: 0;
+}
+
+.garage-workbench input,
+.garage-workbench select,
+.garage-workbench button {
+    font: inherit;
+}
+
+.garage-workbench input:focus-visible,
+.garage-workbench select:focus-visible,
+.garage-workbench button:focus-visible,
+.garage-workbench a:focus-visible {
+    outline: 2px solid #86efac;
+    outline-offset: 2px;
+}
+
+.garage-workbench button {
+    cursor: pointer;
+}

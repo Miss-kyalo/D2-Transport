@@ -14,8 +14,8 @@ import ClientDashboard from './portals/ClientDashboard';
 import DepotDashboard from './pages/DepotDashboard';
 import HomePage from './pages/HomePage';
 import ContainerHomePage from './pages/ContainerHomePage';
-
-// Inside <Routes>:
+import GarageHomePage from './pages/GarageHomePage';
+import GarageWorkbenchPage from './pages/GarageWorkbenchPage';
 
 
 export default function App() {
@@ -25,6 +25,15 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/container-depot" element={<ContainerHomePage />} />
+                <Route path="/garage" element={<GarageHomePage />} />
+                <Route
+                    path="/garage/workbench"
+                    element={
+                        <ProtectedRoute allowedRole={['Admin', 'Mechanic']}>
+                            <GarageWorkbenchPage />
+                        </ProtectedRoute>
+                    }
+                />
                 <Route path="/login" element={<Login />} />
                 <Route path="/track" element={<PublicTracking />} />
                 <Route path="/track/:trackingCode" element={<PublicTracking />} />

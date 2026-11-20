@@ -9,11 +9,15 @@ const truckRoutes = require('./routes/truckRoutes');
 const tripRoutes = require('./routes/tripRoutes');
 const payrollRoutes = require('./routes/payrollRoutes');
 const depotRoutes = require('./routes/depotRoutes');
+const garageRoutes = require('./routes/garageRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const { authMiddleware } = require('./middleware/authMiddleware');
 const pool = require('./config/db');
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use('/api/garage/ai', authMiddleware, express.json({ limit: '10mb' }), aiRoutes);
+app.use(express.json());
 
 app.get('/health', async (_req, res) => {
     try {
@@ -34,6 +38,7 @@ app.use('/api/trucks', truckRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/depot', depotRoutes);
+app.use('/api/garage', garageRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

@@ -33,5 +33,6 @@ function requireRole(...allowedRoles) {
 module.exports = {
     verifyToken,
     authenticateToken: verifyToken,
+    authMiddleware: verifyToken,
     requireRole
 };

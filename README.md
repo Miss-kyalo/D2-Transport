@@ -20,18 +20,23 @@ npm --prefix frontend install
 
 ## Run locally
 
-Configure `backend/.env` with `DATABASE_URL`, `JWT_SECRET`, and `PORT`. Start
-PostgreSQL with Docker Compose, then run the API and frontend in separate
-terminals:
+For local API runs, configure `backend/.env` with `DATABASE_URL`, `JWT_SECRET`,
+and `PORT`; add `GEMINI_API_KEY` to enable garage image inspection. Docker
+Compose reads `POSTGRES_PASSWORD` and `JWT_SECRET` from the shell or a
+project-root `.env` file; set `GEMINI_API_KEY` there to enable the same feature.
+Compose does not use hard-coded credentials.
+Start PostgreSQL, then run the API and frontend in separate terminals:
 
 ```sh
+export POSTGRES_PASSWORD='choose-a-local-database-password'
+export JWT_SECRET='choose-a-local-signing-secret'
 docker compose up -d db
 npm --prefix backend run dev
 npm --prefix frontend run dev
 ```
 
-Apply the depot migration to the database configured in `backend/.env` after
-the initial schema has been installed:
+After the initial schema has been installed, apply the depot, garage, and
+M-Pesa migrations to the database configured in `backend/.env`:
 
 ```sh
 cd backend
@@ -39,9 +44,13 @@ node migrate.js
 node scripts/smokeTest.js
 ```
 
-`migrate.js` applies the depot migration only; the initial schema must already
-be present. The smoke check verifies the compliance helper and table presence,
-not the HTTP Gate-In/Gate-Out flow.
+`migrate.js` applies migrations `005` through `008` in order; the initial schema
+must already be present. The smoke check verifies the compliance helper and
+table presence, not the HTTP Gate-In/Gate-Out flow.
+
+The public garage overview is available at `/garage`. After logging in with an
+Admin or Mechanic account, the job-card workbench is available at
+`/garage/workbench`. Its AI image inspection requires `GEMINI_API_KEY`.
 
 To create local demo logins for every application role, first set the initial
 schema up, then run:
