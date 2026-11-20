@@ -147,6 +147,7 @@ router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
 
     const initialWeight = Number(initial_weight);
     const distanceKm = Number(distance_km);
+    const isSpotMarket = is_spot_market === true || is_spot_market === 'true';
     if (
         !truck_id ||
         !driver_id ||
@@ -195,7 +196,7 @@ router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
 
         const estimatedFuel = Number((distanceKm * FUEL_LITERS_PER_KM).toFixed(2));
         const trackingCode = `D2-${Math.floor(100000 + Math.random() * 900000)}`;
-        const status = is_spot_market ? 'Awaiting_50_Percent_Deposit' : 'Scheduled';
+        const status = isSpotMarket ? 'Awaiting_50_Percent_Deposit' : 'Scheduled';
         const tripResult = await client.query(
             `INSERT INTO trips (
                 truck_id, driver_id, manufacturer_id, consignee_name, consignee_phone,
@@ -219,7 +220,7 @@ router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
                 estimatedFuel,
                 trackingCode,
                 status,
-                Boolean(is_spot_market),
+                isSpotMarket,
                 JSON.stringify(spot_security_checkpoints)
             ]
         );
@@ -244,7 +245,10 @@ router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
                 Number((estimatedFuel * FUEL_COST_PER_LITER).toFixed(2))
             ]
         );
-        await client.query(`UPDATE trucks SET status = 'In-Transit' WHERE id = $1`, [truck_id]);
+        await client.query(
+            `UPDATE trucks SET status = $1 WHERE id = $2`,
+            [isSpotMarket ? 'Reserved' : 'In-Transit', truck_id]
+        );
         await client.query('COMMIT');
         res.status(201).json({ message: 'Trip scheduled successfully.', trip });
     } catch (error) {
@@ -337,6 +341,8 @@ router.patch('/:id/location', requireRole('Driver'), async (req, res) => {
              WHERE l.trip_id = t.id
                AND t.id = $3
                AND t.driver_id = $4
+               AND t.status = 'In-Transit'
+               AND (t.is_spot_market = FALSE OR t.accounts_go_ahead_issued = TRUE)
                AND l.status = 'Active'
              RETURNING l.*`,
             [lat, lng, req.params.id, req.user.id]
@@ -511,7 +517,10 @@ router.post('/:id/upload-note', requireRole('Driver'), upload.single('delivery_n
                     WHEN status = 'Scheduled' THEN 'In-Transit'
                     ELSE status
                  END
-             WHERE id = $2 AND driver_id = $3 AND status IN ('Scheduled', 'In-Transit')
+             WHERE id = $2
+               AND driver_id = $3
+               AND status IN ('Scheduled', 'In-Transit')
+               AND (is_spot_market = FALSE OR accounts_go_ahead_issued = TRUE)
              RETURNING *`,
             [`/uploads/${req.file.filename}`, req.params.id, req.user.id]
         );
@@ -537,8 +546,10 @@ router.patch(
     '/:id/confirm-deposit',
     requireRole('Accounts_Payable', 'Accounts_Receivable', 'Admin'),
     async (req, res) => {
+        const client = await pool.connect();
         try {
-            const result = await pool.query(
+            await client.query('BEGIN');
+            const result = await client.query(
                 `UPDATE trips
                  SET deposit_50_paid = TRUE,
                      accounts_go_ahead_issued = TRUE,
@@ -550,12 +561,21 @@ router.patch(
                 [req.params.id]
             );
             if (!result.rows[0]) {
+                await rollback(client);
                 return res.status(404).json({ error: 'Spot-market trip awaiting deposit not found.' });
             }
+            await client.query(
+                `UPDATE trucks SET status = 'In-Transit' WHERE id = $1`,
+                [result.rows[0].truck_id]
+            );
+            await client.query('COMMIT');
             res.json({ message: 'Deposit verified. Driver may proceed.', trip: result.rows[0] });
         } catch (error) {
+            await rollback(client);
             console.error('Failed to confirm deposit:', error);
             res.status(500).json({ error: 'Server error confirming deposit.' });
+        } finally {
+            client.release();
         }
     }
 );
@@ -584,6 +604,10 @@ router.post('/:id/handover', requireRole('Driver'), async (req, res) => {
         if (trip.driver_id !== req.user.id) {
             await rollback(client);
             return res.status(403).json({ error: 'This trip is not assigned to you.' });
+        }
+        if (trip.is_spot_market && !trip.accounts_go_ahead_issued) {
+            await rollback(client);
+            return res.status(400).json({ error: 'Accounts clearance is required before handover.' });
         }
         if (!['Scheduled', 'In-Transit'].includes(trip.status)) {
             await rollback(client);

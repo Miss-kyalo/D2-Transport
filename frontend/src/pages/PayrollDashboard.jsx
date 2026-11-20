@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
 
+const fetchPayrollData = async (monthYear) => {
+    const [staffRes, cycleRes] = await Promise.all([
+        api.get('/payroll/staff'),
+        api.get(`/payroll/cycles/${monthYear}`)
+    ]);
+
+    return { staff: staffRes.data, payslips: cycleRes.data };
+};
+
 export default function PayrollDashboard() {
     const [monthYear, setMonthYear] = useState('2026-11');
     const [staff, setStaff] = useState([]);
@@ -21,19 +30,31 @@ export default function PayrollDashboard() {
 
     const loadData = async () => {
         try {
-            const [staffRes, cycleRes] = await Promise.all([
-                api.get('/payroll/staff'),
-                api.get(`/payroll/cycles/${monthYear}`)
-            ]);
-            setStaff(staffRes.data);
-            setPayslips(cycleRes.data);
+            const { staff: loadedStaff, payslips: loadedPayslips } = await fetchPayrollData(monthYear);
+            setStaff(loadedStaff);
+            setPayslips(loadedPayslips);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load payroll data.');
         }
     };
 
     useEffect(() => {
-        loadData();
+        let isCurrent = true;
+
+        fetchPayrollData(monthYear)
+            .then(({ staff: loadedStaff, payslips: loadedPayslips }) => {
+                if (!isCurrent) return;
+                setStaff(loadedStaff);
+                setPayslips(loadedPayslips);
+            })
+            .catch((err) => {
+                if (!isCurrent) return;
+                setError(err.response?.data?.error || 'Failed to load payroll data.');
+            });
+
+        return () => {
+            isCurrent = false;
+        };
     }, [monthYear]);
 
     const handleEmployeeSelect = (empId) => {

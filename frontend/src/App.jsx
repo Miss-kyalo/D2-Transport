@@ -4,11 +4,14 @@ import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminDashboard from './pages/AdminDashboard';
 import DriverDashboard from './pages/DriverDashboard';
+import FleetCompliance from './pages/FleetCompliance';
 import Login from './pages/Login';
 import ManufacturerDashboard from './pages/ManufacturerDashboard';
+import PayrollDashboard from './pages/PayrollDashboard';
 import PrintableWaybill from './pages/PrintableWaybill';
 import PublicTracking from './pages/PublicTracking';
 import ClientDashboard from './portals/ClientDashboard';
+import DepotDashboard from './pages/DepotDashboard';
 
 export default function App() {
     return (
@@ -25,6 +28,30 @@ export default function App() {
                     element={
                         <ProtectedRoute allowedRole={ADMIN_ROLES}>
                             <AdminDashboard />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/depot"
+                    element={
+                        <ProtectedRoute allowedRole={['Admin', 'Dispatcher', 'FleetManager', 'Accounts_Receivable']}>
+                            <DepotDashboard />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/fleet"
+                    element={
+                        <ProtectedRoute allowedRole={ADMIN_ROLES}>
+                            <FleetCompliance />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/payroll"
+                    element={
+                        <ProtectedRoute allowedRole={ADMIN_ROLES}>
+                            <PayrollDashboard />
                         </ProtectedRoute>
                     }
                 />

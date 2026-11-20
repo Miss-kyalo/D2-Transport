@@ -23,6 +23,8 @@ export default function AdminDashboard() {
     const [destination, setDestination] = useState('');
     const [cargoDescription, setCargoDescription] = useState('');
     const [initialWeight, setInitialWeight] = useState('');
+    const [distanceKm, setDistanceKm] = useState('');
+    const [isSpotMarket, setIsSpotMarket] = useState(false);
 
     // Transshipment Modal State
     const [transshipTripId, setTransshipTripId] = useState(null);
@@ -105,7 +107,9 @@ export default function AdminDashboard() {
                 origin,
                 destination,
                 cargo_description: cargoDescription,
-                initial_weight: initialWeight
+                initial_weight: initialWeight,
+                distance_km: distanceKm,
+                is_spot_market: isSpotMarket
             });
             setSuccess(`Trip dispatched successfully! Tracking Code: ${res.data.trip.tracking_code}`);
             setSelectedTruckId('');
@@ -117,6 +121,8 @@ export default function AdminDashboard() {
             setDestination('');
             setCargoDescription('');
             setInitialWeight('');
+            setDistanceKm('');
+            setIsSpotMarket(false);
             fetchData();
         } catch (err) {
             setError(err.response?.data?.message || err.response?.data?.error || 'Failed to dispatch trip.');
@@ -159,6 +165,18 @@ export default function AdminDashboard() {
             fetchData();
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to resolve discrepancy.');
+        }
+    };
+
+    const handleConfirmDeposit = async (tripId) => {
+        setError('');
+        setSuccess('');
+        try {
+            const response = await api.patch(`/trips/${tripId}/confirm-deposit`);
+            setSuccess(response.data.message);
+            fetchData();
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to confirm the spot-market deposit.');
         }
     };
 
@@ -284,6 +302,29 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'center' }}>
+                            <label style={{ flex: 1, color: '#C8C5BC', fontSize: '0.85em' }}>
+                                Distance (km):
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={distanceKm}
+                                    onChange={(e) => setDistanceKm(e.target.value)}
+                                    required
+                                    style={{ width: '100%', padding: '8px', marginTop: '4px', background: '#0E1A14', color: '#fff', border: '1px solid #444', borderRadius: '4px', boxSizing: 'border-box' }}
+                                />
+                            </label>
+                            <label style={{ flex: 1, display: 'flex', gap: '8px', alignItems: 'center', color: '#C8C5BC', fontSize: '0.85em' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isSpotMarket}
+                                    onChange={(e) => setIsSpotMarket(e.target.checked)}
+                                />
+                                Spot-market trip (held until 50% deposit is confirmed)
+                            </label>
+                        </div>
+
                         <button type="submit" disabled={!canDispatch} style={{ width: '100%', padding: '10px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', fontWeight: 'bold', cursor: canDispatch ? 'pointer' : 'not-allowed', opacity: canDispatch ? 1 : 0.55 }}>Dispatch Trip & Generate QR</button>
                     </form>
                 </div>
@@ -373,6 +414,7 @@ export default function AdminDashboard() {
                             <th style={{ padding: '10px' }}>Route</th>
                             <th style={{ padding: '10px' }}>Cargo</th>
                             <th style={{ padding: '10px' }}>Initial Weight</th>
+                            <th style={{ padding: '10px' }}>Est. Fuel (L)</th>
                             <th style={{ padding: '10px' }}>Status</th>
                             <th style={{ padding: '10px' }}>Actions</th>
                         </tr>
@@ -385,8 +427,19 @@ export default function AdminDashboard() {
                                 <td style={{ padding: '10px' }}>{trip.origin} &rarr; {trip.destination}</td>
                                 <td style={{ padding: '10px' }}>{trip.cargo_description}</td>
                                 <td style={{ padding: '10px' }}>{trip.initial_weight} t</td>
+                                <td style={{ padding: '10px' }}>{Number(trip.estimated_fuel_liters || 0).toFixed(2)}</td>
                                 <td style={{ padding: '10px', color: trip.status === 'Completed' ? '#51cf66' : trip.status === 'Flagged-Discrepancy' ? '#ff6b6b' : '#4dabf7', fontWeight: 'bold' }}>{trip.status}</td>
                                 <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
+                                    {trip.status === 'Awaiting_50_Percent_Deposit' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleConfirmDeposit(trip.id)}
+                                            disabled={!canDispatch}
+                                            style={{ padding: '5px 9px', background: '#0d6efd', color: '#fff', border: 'none', borderRadius: '4px', cursor: canDispatch ? 'pointer' : 'not-allowed', fontSize: '0.8em' }}
+                                        >
+                                            Confirm 50% deposit
+                                        </button>
+                                    )}
                                     {trip.tracking_code && (
                                         <button
                                             onClick={() => navigate(`/waybill/${trip.tracking_code}`)}

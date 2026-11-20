@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 
 export default function DriverPayslipModal() {
@@ -8,21 +8,29 @@ export default function DriverPayslipModal() {
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
 
-    const fetchMyPayslips = async () => {
-        try {
-            setLoading(true);
-            const res = await api.get('/payroll/my-payslips');
-            setPayslips(res.data);
-        } catch (err) {
-            setError('Failed to load payslips.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const fetchMyPayslips = useCallback(async () => {
+        const res = await api.get('/payroll/my-payslips');
+        return res.data;
+    }, []);
 
     useEffect(() => {
-        fetchMyPayslips();
-    }, []);
+        let isCurrent = true;
+
+        fetchMyPayslips()
+            .then((loadedPayslips) => {
+                if (isCurrent) setPayslips(loadedPayslips);
+            })
+            .catch(() => {
+                if (isCurrent) setError('Failed to load payslips.');
+            })
+            .finally(() => {
+                if (isCurrent) setLoading(false);
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [fetchMyPayslips]);
 
     const handleAcknowledge = async (payslipId) => {
         if (!signatureText.trim()) {
@@ -35,7 +43,9 @@ export default function DriverPayslipModal() {
             });
             setMessage(res.data.message);
             setSignatureText('');
-            fetchMyPayslips();
+            fetchMyPayslips()
+                .then(setPayslips)
+                .catch(() => setError('Failed to load payslips.'));
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to sign payslip.');
         }
