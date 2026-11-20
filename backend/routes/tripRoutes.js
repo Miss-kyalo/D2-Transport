@@ -195,7 +195,7 @@ router.post('/', requireRole('Admin', 'Dispatcher'), async (req, res) => {
         }
 
         const estimatedFuel = Number((distanceKm * FUEL_LITERS_PER_KM).toFixed(2));
-        const trackingCode = `D2-${Math.floor(100000 + Math.random() * 900000)}`;
+        const trackingCode = `DFL-${Math.floor(100000 + Math.random() * 900000)}`;
         const status = isSpotMarket ? 'Awaiting_50_Percent_Deposit' : 'Scheduled';
         const tripResult = await client.query(
             `INSERT INTO trips (

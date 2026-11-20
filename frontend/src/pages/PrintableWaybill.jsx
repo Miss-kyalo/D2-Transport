@@ -45,7 +45,7 @@ export default function PrintableWaybill() {
         <div style={{ maxWidth: '600px', margin: '30px auto', background: '#fff', color: '#000', padding: '30px', fontFamily: 'monospace', border: '1px solid #000', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px dashed #000', paddingBottom: '15px' }}>
                 <div>
-                    <h2 style={{ margin: 0, color: '#004225' }}>D2-TRANSPORT WAYBILL</h2>
+                    <h2 style={{ margin: 0, color: '#004225' }}>DIFAN LOGISTICS WAYBILL</h2>
                     <p style={{ margin: '4px 0 0 0', fontSize: '0.85em' }}>3PL Freight Assurance & Security Audit</p>
                 </div>
                 <div style={{ textAlign: 'right' }}>

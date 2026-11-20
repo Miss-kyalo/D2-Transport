@@ -12,12 +12,19 @@ import PrintableWaybill from './pages/PrintableWaybill';
 import PublicTracking from './pages/PublicTracking';
 import ClientDashboard from './portals/ClientDashboard';
 import DepotDashboard from './pages/DepotDashboard';
+import HomePage from './pages/HomePage';
+import ContainerHomePage from './pages/ContainerHomePage';
+
+// Inside <Routes>:
+
 
 export default function App() {
     return (
         <BrowserRouter>
             <Navbar />
             <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/container-depot" element={<ContainerHomePage />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/track" element={<PublicTracking />} />
                 <Route path="/track/:trackingCode" element={<PublicTracking />} />
@@ -80,7 +87,7 @@ export default function App() {
                     }
                 />
 
-                <Route path="*" element={<Navigate to="/login" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>
     );

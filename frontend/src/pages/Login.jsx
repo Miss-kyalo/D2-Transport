@@ -37,7 +37,7 @@ export default function Login() {
 
     return (
         <div style={{ maxWidth: '400px', margin: '60px auto', fontFamily: 'sans-serif', padding: '24px', border: '1px solid rgba(184, 155, 106, 0.3)', borderRadius: '8px', background: '#0E1A14', color: '#F8F6F0' }}>
-            <h2 style={{ color: '#F8F6F0', marginTop: 0, textAlign: 'center' }}>D2-Transport Login</h2>
+            <h2 style={{ color: '#F8F6F0', marginTop: 0, textAlign: 'center' }}>Difan Logistics Login</h2>
             <small style={{ color: '#B89B6A', display: 'block', textAlign: 'center', marginBottom: '20px' }}>Secure 3PL Enterprise Portal</small>
             
             {error && <p style={{ color: '#ff6b6b', background: 'rgba(255,0,0,0.12)', padding: '10px', borderRadius: '4px', fontSize: '0.9em' }}>{error}</p>}

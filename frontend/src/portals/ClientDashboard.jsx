@@ -63,7 +63,7 @@ export default function ClientDashboard() {
                 <form onSubmit={handleQuickTrack} style={{ display: 'flex', gap: '10px' }}>
                     <input 
                         type="text" 
-                        placeholder="Enter Tracking Code (e.g. D2-482910)" 
+                        placeholder="Enter Tracking Code (e.g. DFL-482910)"
                         value={trackingInput} 
                         onChange={(e) => setTrackingInput(e.target.value)} 
                         required 

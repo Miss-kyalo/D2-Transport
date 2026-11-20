@@ -192,7 +192,7 @@ export default function AdminDashboard() {
         <div style={{ maxWidth: '1150px', margin: '30px auto', fontFamily: 'sans-serif', padding: '24px', background: '#0E1A14', color: '#F8F6F0', borderRadius: '8px', border: '1px solid rgba(184, 155, 106, 0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(184, 155, 106, 0.3)', paddingBottom: '15px' }}>
                 <div>
-                    <h2 style={{ margin: 0, color: '#F8F6F0' }}>D2-Transport Dispatch & Fleet Control</h2>
+                    <h2 style={{ margin: 0, color: '#F8F6F0' }}>Difan Logistics Dispatch & Fleet Control</h2>
                     <small style={{ color: '#B89B6A' }}>3PL Operations, OCR Stamp Audits & Chain-of-Custody</small>
                 </div>
                 <button onClick={handleLogout} style={{ padding: '8px 16px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>

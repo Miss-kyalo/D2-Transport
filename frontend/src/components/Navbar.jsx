@@ -1,16 +1,18 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export default function Navbar() {
+    const location = useLocation();
     const navigate = useNavigate();
     const token = localStorage.getItem('token');
+
+    if (['/', '/container-depot'].includes(location.pathname) || !token) return null;
+
     const role = localStorage.getItem('role');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-    if (!token) return null;
-
     const handleLogout = () => {
         localStorage.clear();
-        navigate('/login');
+        navigate('/');
     };
 
     return (
@@ -24,7 +26,7 @@ export default function Navbar() {
             fontFamily: 'sans-serif'
         }}>
             <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                <strong style={{ fontSize: '16px', letterSpacing: '0.5px' }}>D2-Transport</strong>
+                <strong style={{ fontSize: '16px', letterSpacing: '0.5px' }}>Difan Logistics</strong>
 
                 {role === 'Admin' && (
                     <>

@@ -1,6 +1,6 @@
-# D2 Transport
+# Difan Logistics
 
-D2 Transport is a transport operations application with a React frontend, an
+Difan Logistics is a transport operations application with a React frontend, an
 Express API, and a PostgreSQL database.
 
 ## Project layout
@@ -42,6 +42,22 @@ node scripts/smokeTest.js
 `migrate.js` applies the depot migration only; the initial schema must already
 be present. The smoke check verifies the compliance helper and table presence,
 not the HTTP Gate-In/Gate-Out flow.
+
+To create local demo logins for every application role, first set the initial
+schema up, then run:
+
+```sh
+DEMO_ACCOUNT_PASSWORD='choose-a-password-of-at-least-12-characters' \
+  npm --prefix backend run seed:demo
+```
+
+All demo accounts use the supplied password and have no phone number. The seed
+can be rerun to reset their password; it refuses to overwrite an existing
+account unless its demo email matches. Logins with web portals are `demo_admin`,
+`demo_fleet_manager`, `demo_driver`, `demo_manufacturer`, `demo_client`, and
+`demo_spot_client`. Other roles are for API permission testing. Demo accounts
+do not create sample trips or trucks. Use this only with a local/test database,
+never production.
 
 Depot operations are available at `/depot`. Gate-Out checks active holds,
 damage, and cleaning; sanitization and KEPHIS clearance can also be required

@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react'
+import process from 'node:process'
 import { defineConfig } from 'vite'
 
 const backendTarget = process.env.BACKEND_URL || 'http://localhost:5000'

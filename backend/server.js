@@ -37,5 +37,5 @@ app.use('/api/depot', depotRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`🚀 D2-Transport Enterprise ERP backend running on port ${PORT}`);
+    console.log(`🚀 Difan Logistics backend running on port ${PORT}`);
 });

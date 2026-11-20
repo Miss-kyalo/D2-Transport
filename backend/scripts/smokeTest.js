@@ -4,7 +4,7 @@ const pool = require('../config/db');
 const { validateIso6346, evaluateReleaseEligibility } = require('../utils/depotCompliance');
 
 async function runSmokeCheck() {
-    console.log('--- D2-Transport Smoke & Compliance Check ---');
+    console.log('--- Difan Logistics Smoke & Compliance Check ---');
 
     // 1. Verify ISO 6346 check-digit validator
     const sampleIso = validateIso6346('CSQU3054383');

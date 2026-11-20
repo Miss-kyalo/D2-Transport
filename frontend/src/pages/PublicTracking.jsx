@@ -59,7 +59,7 @@ export default function PublicTracking() {
         <div style={{ maxWidth: '800px', margin: '40px auto', fontFamily: 'sans-serif', padding: '24px', background: '#0E1A14', color: '#F8F6F0', borderRadius: '8px', border: '1px solid rgba(184, 155, 106, 0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(184, 155, 106, 0.3)', paddingBottom: '15px' }}>
                 <div>
-                    <h2 style={{ margin: 0, color: '#F8F6F0' }}>📦 D2-Transport Public Waybill & QR Tracking</h2>
+                    <h2 style={{ margin: 0, color: '#F8F6F0' }}>📦 Difan Logistics Public Waybill & QR Tracking</h2>
                     <small style={{ color: '#B89B6A' }}>Chain-of-Custody & Live Audit Portal</small>
                 </div>
                 <button onClick={() => navigate('/login')} style={{ padding: '8px 16px', background: '#004225', color: '#F8F6F0', border: '1px solid #B89B6A', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
@@ -70,7 +70,7 @@ export default function PublicTracking() {
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
                 <input 
                     type="text" 
-                    placeholder="Enter Tracking Code (e.g. D2-849201)" 
+                    placeholder="Enter Tracking Code (e.g. DFL-849201)"
                     value={codeQuery} 
                     onChange={(e) => setCodeQuery(e.target.value)}
                     style={{ flex: 1, padding: '10px', background: '#16261E', color: '#fff', border: '1px solid #444', borderRadius: '4px', boxSizing: 'border-box' }}
