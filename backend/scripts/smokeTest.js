@@ -58,4 +58,4 @@ runSmokeCheck().catch(async (err) => {
     console.error('Smoke test failed:', err.message);
     await pool.end().catch(() => {});
     process.exit(1);
-});kcv095-1-last 22/7,kdc192-1 imetoa wire
+});
