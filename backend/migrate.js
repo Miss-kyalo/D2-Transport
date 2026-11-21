@@ -8,7 +8,8 @@ async function migrate() {
         ['005_depot_compliance.sql', 'Depot'],
         ['006_garage.sql', 'Garage'],
         ['007_mpesa_payments.sql', 'M-Pesa payments'],
-        ['008_idempotency.sql', 'Garage idempotency']
+        ['008_idempotency.sql', 'Garage idempotency'],
+        ['009_hr_payroll_qr_audit.sql', 'HR payroll audit and QR verification']
     ];
 
     for (const [filename, name] of migrations) {

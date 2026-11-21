@@ -99,3 +99,70 @@ CREATE INDEX IF NOT EXISTS idx_job_cards_status ON job_cards(status);
 CREATE INDEX IF NOT EXISTS idx_inspection_pins_job_card ON inspection_pins_3d(job_card_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_item_id ON stock_movements(item_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_job_card_id ON stock_movements(job_card_id);
+
+CREATE TABLE IF NOT EXISTS garage_work_orders (
+    id SERIAL PRIMARY KEY,
+    wo_number VARCHAR(40) UNIQUE NOT NULL,
+    department_source VARCHAR(30) NOT NULL DEFAULT 'GARAGE',
+    asset_type VARCHAR(30) NOT NULL,
+    asset_identifier VARCHAR(60) NOT NULL,
+    truck_id INTEGER REFERENCES trucks(id) ON DELETE SET NULL,
+    customer_or_unit VARCHAR(120),
+    fault_category VARCHAR(60) NOT NULL,
+    dtc_codes VARCHAR(120),
+    problem_description TEXT NOT NULL,
+    parts_used TEXT,
+    labor_hours NUMERIC(6, 2) DEFAULT 0.00,
+    parts_cost NUMERIC(12, 2) DEFAULT 0.00,
+    labor_cost NUMERIC(12, 2) DEFAULT 0.00,
+    total_estimate NUMERIC(12, 2) DEFAULT 0.00,
+    billing_currency VARCHAR(10) DEFAULT 'KES',
+    priority VARCHAR(20) DEFAULT 'Normal',
+    status VARCHAR(25) NOT NULL DEFAULT 'Open',
+    assigned_mechanic_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS garage_bays (
+    id SERIAL PRIMARY KEY,
+    bay_code VARCHAR(20) UNIQUE NOT NULL,
+    bay_name VARCHAR(80) NOT NULL,
+    specialty VARCHAR(60) DEFAULT 'Heavy Diesel & Hydraulics',
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+INSERT INTO garage_bays (bay_code, bay_name, specialty)
+VALUES
+    ('BAY-01', 'Heavy Prime Mover & Gearbox Pit', 'Engine & Drivetrain'),
+    ('BAY-02', 'Trailer Axle, Air Brakes & Suspension Bay', 'Brakes & Chassis'),
+    ('BAY-03', 'Reach Stacker, Forklift & Hydraulics Bay', 'Depot & Heavy Plant'),
+    ('BAY-04', 'OBD-II Diagnostics & Auto-Electrical Bay', 'Diagnostics & Electrical')
+ON CONFLICT (bay_code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS garage_work_orders (
+    id SERIAL PRIMARY KEY,
+    wo_number VARCHAR(40) UNIQUE NOT NULL,
+    department_source VARCHAR(30) NOT NULL DEFAULT 'GARAGE',
+    asset_type VARCHAR(30) NOT NULL,
+    asset_identifier VARCHAR(60) NOT NULL,
+    truck_id INTEGER REFERENCES trucks(id) ON DELETE SET NULL,
+    bay_id INTEGER REFERENCES garage_bays(id) ON DELETE SET NULL,
+    customer_or_unit VARCHAR(120),
+    customer_phone VARCHAR(30),
+    fault_category VARCHAR(60) NOT NULL,
+    dtc_codes VARCHAR(120),
+    problem_description TEXT NOT NULL,
+    parts_used TEXT,
+    labor_hours NUMERIC(6, 2) DEFAULT 0.00,
+    parts_cost NUMERIC(12, 2) DEFAULT 0.00,
+    labor_cost NUMERIC(12, 2) DEFAULT 0.00,
+    total_estimate NUMERIC(12, 2) DEFAULT 0.00,
+    billing_currency VARCHAR(10) DEFAULT 'KES',
+    priority VARCHAR(20) DEFAULT 'Normal',
+    status VARCHAR(25) NOT NULL DEFAULT 'Open',
+    assigned_mechanic_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

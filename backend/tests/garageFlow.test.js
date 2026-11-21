@@ -46,6 +46,12 @@ test('blocks READY transition when core part is issued without core return, then
   assert.equal(created.status, 201);
   const jobId = created.data.id;
 
+  const toDiagnosing = await api(`/job-cards/${jobId}/status`, {
+    method: 'PATCH',
+    body: { next_status: 'DIAGNOSING' },
+  });
+  assert.equal(toDiagnosing.status, 200);
+
   const toRepair = await api(`/job-cards/${jobId}/status`, {
     method: 'PATCH',
     body: { next_status: 'IN_REPAIR' },

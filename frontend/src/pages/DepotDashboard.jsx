@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
+import EirPrintModal from '../components/EirPrintModal';
 
 export default function DepotDashboard() {
     const [containers, setContainers] = useState([]);
@@ -9,6 +10,7 @@ export default function DepotDashboard() {
     const [blockers, setBlockers] = useState([]);
     const [message, setMessage] = useState('');
     const [releaseContainer, setReleaseContainer] = useState(null);
+    const [eirReceipt, setEirReceipt] = useState(null);
     const role = localStorage.getItem('role');
     const canManage = ['Admin', 'Dispatcher', 'FleetManager'].includes(role);
     const canManageLicenses = ['Admin', 'FleetManager'].includes(role);
@@ -27,9 +29,18 @@ export default function DepotDashboard() {
         kebs_hold: false,
         hold_reason: '',
         truck_plate: '',
+        trailer_plate: '',
+        transporter_name: '',
+        driver_name: '',
+        driver_id_number: '',
+        driver_phone: '',
+        driver_license: '',
+        shipper_name: '',
+        client_name: '',
         seal_number: '',
         eir_reference: '',
-        iicl_damage_codes: ''
+        iicl_damage_codes: '',
+        iicl_defect_notes: ''
     });
 
     // Selected Container for Compliance / Cleaning / Release Update
@@ -96,6 +107,7 @@ export default function DepotDashboard() {
         try {
             const res = await api.post('/depot/containers/gate-in', gateIn);
             setMessage(res.data.message);
+            if (res.data.eir_receipt) setEirReceipt(res.data.eir_receipt);
             setGateIn({
                 container_number: '',
                 container_type: '40FT',
@@ -109,9 +121,18 @@ export default function DepotDashboard() {
                 kebs_hold: false,
                 hold_reason: '',
                 truck_plate: '',
+                trailer_plate: '',
+                transporter_name: '',
+                driver_name: '',
+                driver_id_number: '',
+                driver_phone: '',
+                driver_license: '',
+                shipper_name: '',
+                client_name: '',
                 seal_number: '',
                 eir_reference: '',
-                iicl_damage_codes: ''
+                iicl_damage_codes: '',
+                iicl_defect_notes: ''
             });
             loadDepotData();
         } catch (err) {
@@ -166,6 +187,13 @@ export default function DepotDashboard() {
                 require_kephis: data.has('require_kephis')
             });
             setMessage(res.data.message);
+            handleOpenInterchange(res.data.container, {
+                eir_reference: data.get('eir_reference'),
+                movement_type: 'GATE_OUT',
+                truck_plate: data.get('truck_plate'),
+                seal_number: data.get('seal_number'),
+                destination: 'Corridor / Port'
+            });
             setReleaseContainer(null);
             loadDepotData();
         } catch (err) {
@@ -202,6 +230,39 @@ export default function DepotDashboard() {
         const days = Math.max(0, Math.floor((end - new Date(c.gated_in_at)) / (1000 * 60 * 60 * 24)));
         const billableDays = Math.max(0, days - Number(c.free_days || 0));
         return (billableDays * Number(c.daily_storage_rate)).toFixed(2);
+    };
+
+    const handleOpenInterchange = (container, movement = {}) => {
+        setEirReceipt({
+            eir_reference: movement.eir_reference || `EIR-${container.id}-${Date.now().toString().slice(-4)}`,
+            movement_type: movement.movement_type || (container.status === 'Gated-Out' ? 'GATE_OUT' : 'GATE_IN'),
+            tracking_code: container.current_trip_id ? `TRIP-${container.current_trip_id}` : 'YARD-INTERCHANGE',
+            issued_at: new Date().toISOString(),
+            origin: 'D2-Transport Depot (Athi River)',
+            destination: movement.destination || (container.status === 'Gated-Out' ? 'Corridor / Port' : 'Depot Yard'),
+            seal_number: movement.seal_number || 'On File',
+            truck_plate: movement.truck_plate || '—',
+            cargo_description: `${container.container_type} Container`,
+            container,
+            driver: {
+                name: '—',
+                national_id: '—',
+                phone_number: '—',
+                license_number: '—'
+            },
+            transporter: {
+                company_name: 'D2-Transport (K) Ltd',
+                truck_plate: movement.truck_plate || '—',
+                trailer_plate: '—',
+                depot_location: 'Athi River, Machakos County, Kenya'
+            },
+            client_shipper: {
+                principal_or_line: container.principal_name || '—',
+                shipper_name: container.principal_name || '—',
+                consignee_or_client: '—',
+                billing_currency: container.principal_currency || 'USD'
+            }
+        });
     };
 
     return (
@@ -284,15 +345,69 @@ export default function DepotDashboard() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '10px' }}>
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Truck Plate</label>
                             <input type="text" placeholder="KDN 412T" value={gateIn.truck_plate} onChange={(e) => setGateIn({ ...gateIn, truck_plate: e.target.value })} style={{ width: '100%', padding: '8px' }} />
                         </div>
                         <div>
-                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Seal / EIR #</label>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Trailer Plate</label>
+                            <input type="text" value={gateIn.trailer_plate} onChange={(e) => setGateIn({ ...gateIn, trailer_plate: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Transporter Name</label>
+                            <input type="text" value={gateIn.transporter_name} onChange={(e) => setGateIn({ ...gateIn, transporter_name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Seal Number</label>
                             <input type="text" placeholder="SL-99812" value={gateIn.seal_number} onChange={(e) => setGateIn({ ...gateIn, seal_number: e.target.value })} style={{ width: '100%', padding: '8px' }} />
                         </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>EIR Reference (optional)</label>
+                            <input type="text" value={gateIn.eir_reference} onChange={(e) => setGateIn({ ...gateIn, eir_reference: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Driver Name</label>
+                            <input type="text" value={gateIn.driver_name} onChange={(e) => setGateIn({ ...gateIn, driver_name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Driver ID Number</label>
+                            <input type="text" value={gateIn.driver_id_number} onChange={(e) => setGateIn({ ...gateIn, driver_id_number: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Driver Phone</label>
+                            <input type="tel" value={gateIn.driver_phone} onChange={(e) => setGateIn({ ...gateIn, driver_phone: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Driver License</label>
+                            <input type="text" value={gateIn.driver_license} onChange={(e) => setGateIn({ ...gateIn, driver_license: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Shipper Name</label>
+                            <input type="text" value={gateIn.shipper_name} onChange={(e) => setGateIn({ ...gateIn, shipper_name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Client / Consignee Name</label>
+                            <input type="text" value={gateIn.client_name} onChange={(e) => setGateIn({ ...gateIn, client_name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px' }}>
+                        <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>IICL Damage Codes</label>
+                        <input type="text" value={gateIn.iicl_damage_codes} onChange={(e) => setGateIn({ ...gateIn, iicl_damage_codes: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                        <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>IICL Defect Notes</label>
+                        <textarea value={gateIn.iicl_defect_notes} onChange={(e) => setGateIn({ ...gateIn, iicl_defect_notes: e.target.value })} rows={2} style={{ width: '100%', padding: '8px' }} />
                     </div>
 
                     <div style={{ display: 'flex', gap: '14px', fontSize: '12px', marginBottom: '12px' }}>
@@ -474,6 +589,9 @@ export default function DepotDashboard() {
                         </div>
                     </form>
                 </div>
+            )}
+            {eirReceipt && (
+                <EirPrintModal receipt={eirReceipt} onClose={() => setEirReceipt(null)} />
             )}
         </div>
     );

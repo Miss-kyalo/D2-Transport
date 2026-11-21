@@ -5,18 +5,18 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminDashboard from './pages/AdminDashboard';
 import DriverDashboard from './pages/DriverDashboard';
 import FleetCompliance from './pages/FleetCompliance';
+import GarageDepartment from './pages/GarageDepartment';
+import HrPayrollAuditSuite from './pages/HrPayrollAuditSuite';
 import Login from './pages/Login';
 import ManufacturerDashboard from './pages/ManufacturerDashboard';
-import PayrollDashboard from './pages/PayrollDashboard';
 import PrintableWaybill from './pages/PrintableWaybill';
-import PublicTracking from './pages/PublicTracking';
+import PublicQrTracker from './pages/PublicQrTracker';
 import ClientDashboard from './portals/ClientDashboard';
 import DepotDashboard from './pages/DepotDashboard';
 import HomePage from './pages/HomePage';
 import ContainerHomePage from './pages/ContainerHomePage';
-import GarageHomePage from './pages/GarageHomePage';
 import GarageWorkbenchPage from './pages/GarageWorkbenchPage';
-
+import PrincipalPortal from './pages/PrincipalPortal';
 
 export default function App() {
     return (
@@ -25,7 +25,7 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/container-depot" element={<ContainerHomePage />} />
-                <Route path="/garage" element={<GarageHomePage />} />
+                <Route path="/garage" element={<ProtectedRoute><GarageDepartment /></ProtectedRoute>} />
                 <Route
                     path="/garage/workbench"
                     element={
@@ -35,9 +35,11 @@ export default function App() {
                     }
                 />
                 <Route path="/login" element={<Login />} />
-                <Route path="/track" element={<PublicTracking />} />
-                <Route path="/track/:trackingCode" element={<PublicTracking />} />
+                <Route path="/track" element={<PublicQrTracker />} />
+                <Route path="/track/:code" element={<PublicQrTracker />} />
                 <Route path="/waybill/:trackingCode" element={<PrintableWaybill />} />
+                <Route path="/principal" element={<ProtectedRoute><PrincipalPortal /></ProtectedRoute>} />
+                <Route path="/payroll" element={<ProtectedRoute allowedRole="Admin"><HrPayrollAuditSuite /></ProtectedRoute>} />
 
                 <Route
                     path="/admin/*"
@@ -60,14 +62,6 @@ export default function App() {
                     element={
                         <ProtectedRoute allowedRole={ADMIN_ROLES}>
                             <FleetCompliance />
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/payroll"
-                    element={
-                        <ProtectedRoute allowedRole={ADMIN_ROLES}>
-                            <PayrollDashboard />
                         </ProtectedRoute>
                     }
                 />

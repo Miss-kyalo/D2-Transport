@@ -55,6 +55,7 @@ export default function Navbar() {
                 )}
 
                 <Link to="/track/TEST-001" style={{ color: '#93c5fd', textDecoration: 'none', fontSize: '14px' }}>QR Tracker</Link>
+                <Link to="/principal" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Principal Portal (EN/IT)</Link>
             </div>
 
             <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '13px' }}>
