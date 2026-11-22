@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../api';
+import { downloadDocument } from '../lib/downloadDocument';
 
 const fieldStyle = {
     display: 'block',
@@ -22,6 +23,9 @@ export default function FleetCompliance() {
     const [expiryDate, setExpiryDate] = useState('');
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
+    const [importErrors, setImportErrors] = useState([]);
+    const [workbook, setWorkbook] = useState(null);
+    const [fileInputKey, setFileInputKey] = useState(0);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -110,11 +114,64 @@ export default function FleetCompliance() {
         }
     };
 
+    const handleDownloadTemplate = async () => {
+        setError('');
+        try {
+            const response = await api.get('/trucks/import/template', { responseType: 'blob' });
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'truck-import-template.xlsx';
+            link.click();
+            URL.revokeObjectURL(url);
+        } catch (requestError) {
+            setError(requestError.response?.data?.error || 'Failed to download the truck import template.');
+        }
+    };
+
+    const handleImportTrucks = async (event) => {
+        event.preventDefault();
+        if (!workbook) return;
+        setError('');
+        setMessage('');
+        setImportErrors([]);
+        setSaving(true);
+        const formData = new FormData();
+        formData.append('workbook', workbook);
+        try {
+            const response = await api.post('/trucks/import', formData);
+            setMessage(response.data.message);
+            setWorkbook(null);
+            setFileInputKey((key) => key + 1);
+            const trucksResponse = await api.get('/trucks');
+            setTrucks(trucksResponse.data);
+        } catch (requestError) {
+            setError(requestError.response?.data?.error || 'Failed to import trucks.');
+            setImportErrors(requestError.response?.data?.errors || []);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <main style={{ maxWidth: '1000px', margin: '30px auto', padding: '24px', fontFamily: 'sans-serif' }}>
             <h1>Fleet & Compliance</h1>
             {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
+            {importErrors.length > 0 && <ul style={{ color: '#b91c1c' }}>{importErrors.map((item, index) => <li key={index}>{item}</li>)}</ul>}
             {message && <p role="status" style={{ color: '#166534' }}>{message}</p>}
+
+            <section style={{ marginBottom: '30px' }}>
+                <h2>Import trucks from Excel</h2>
+                <p>Download the template and fill the Trucks sheet. The Example sheet shows the expected format. A file with errors or duplicate plates is rejected without importing any trucks.</p>
+                <button type="button" onClick={handleDownloadTemplate} disabled={saving}>Download template and example</button>
+                <form onSubmit={handleImportTrucks} style={{ marginTop: '12px' }}>
+                    <label>
+                        Excel workbook (.xlsx, up to 5 MB and 1,000 trucks)
+                        <input key={fileInputKey} type="file" accept=".xlsx" required onChange={(event) => setWorkbook(event.target.files[0] || null)} style={fieldStyle} />
+                    </label>
+                    <button type="submit" disabled={saving || !workbook} style={{ marginTop: '12px' }}>Import trucks</button>
+                </form>
+            </section>
 
             <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
                 <form onSubmit={handleAddTruck}>
@@ -147,7 +204,13 @@ export default function FleetCompliance() {
                     </label>
                     <label>
                         Document type
-                        <input required value={docType} onChange={(event) => setDocType(event.target.value)} style={fieldStyle} />
+                        <select required value={docType} onChange={(event) => setDocType(event.target.value)} style={fieldStyle}>
+                            <option value="">Select a certificate type</option>
+                            <option value="Insurance">Insurance</option>
+                            <option value="Speed Governor">Speed Governor</option>
+                            <option value="Inspection">Inspection</option>
+                            <option value="Driving License">Driving License</option>
+                        </select>
                     </label>
                     <label>
                         Certificate number
@@ -199,7 +262,7 @@ export default function FleetCompliance() {
                         {documents.map((document) => (
                             <li key={document.id}>
                                 {document.doc_type} — {document.certificate_number} (expires {document.expiry_date}){' '}
-                                <a href={document.cloud_file_url} target="_blank" rel="noreferrer">Open certificate</a>
+                                <button type="button" onClick={() => downloadDocument(document.cloud_file_url).catch((err) => setError(err.message || 'Failed to download certificate.'))}>Download certificate</button>
                             </li>
                         ))}
                     </ul>

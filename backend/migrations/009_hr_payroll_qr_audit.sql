@@ -64,3 +64,5 @@ CREATE TABLE IF NOT EXISTS payroll_records (
 -- 4. Public QR Verification Token on Trips
 ALTER TABLE trips
     ADD COLUMN IF NOT EXISTS qr_token VARCHAR(64) UNIQUE;
+
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'PayrollAccountant';

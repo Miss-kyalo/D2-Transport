@@ -1,18 +1,32 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import api from '../api';
+import { STAFF_ROLES } from '../auth';
 
 export default function Navbar() {
     const location = useLocation();
     const navigate = useNavigate();
     const token = localStorage.getItem('token');
+    const [logoutError, setLogoutError] = useState('');
+    const [loggingOut, setLoggingOut] = useState(false);
 
     if (['/', '/container-depot', '/garage'].includes(location.pathname) || !token) return null;
 
     const role = localStorage.getItem('role');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-    const handleLogout = () => {
-        localStorage.clear();
-        navigate('/');
+    const handleLogout = async () => {
+        setLogoutError('');
+        setLoggingOut(true);
+        try {
+            await api.post('/auth/logout');
+            localStorage.clear();
+            navigate('/');
+        } catch (error) {
+            setLogoutError(error.response?.data?.error || 'Could not revoke session. Please try again.');
+        } finally {
+            setLoggingOut(false);
+        }
     };
 
     return (
@@ -28,15 +42,30 @@ export default function Navbar() {
             <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                 <strong style={{ fontSize: '16px', letterSpacing: '0.5px' }}>Difan Logistics</strong>
 
+                {['Admin', 'FleetManager', 'Dispatcher', 'Storekeeper', 'Accounts_Payable', 'Accounts_Receivable', 'PayrollAccountant', 'Boss'].includes(role) && (
+                    <Link to="/control" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Control</Link>
+                )}
+
+                {['PayrollAccountant', 'Boss'].includes(role) && (
+                    <Link to="/payroll" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>2026 Payroll</Link>
+                )}
+
+                {STAFF_ROLES.includes(role) && (
+                    <Link to="/my-payslips" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>My Payslips</Link>
+                )}
+
+                {role === 'HR' && (
+                    <Link to="/hr/leave" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Leave &amp; Off-Days</Link>
+                )}
+
                 {role === 'Admin' && (
                     <>
                         <Link to="/admin" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Dispatch</Link>
                         <Link to="/fleet" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>Fleet & Compliance</Link>
-                        <Link to="/payroll" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>2026 Payroll</Link>
                     </>
                 )}
 
-                {['Admin', 'Mechanic'].includes(role) && (
+                {['Admin', 'Mechanic', 'FleetManager', 'Storekeeper'].includes(role) && (
                     <Link to="/garage/workbench" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>
                         Garage Workbench
                     </Link>
@@ -47,7 +76,7 @@ export default function Navbar() {
                 )}
 
                 {role === 'Driver' && (
-                    <Link to="/driver" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>My Trips & Payslips</Link>
+                    <Link to="/driver" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '14px' }}>My Trips</Link>
                 )}
 
                 {role === 'Manufacturer' && (
@@ -60,8 +89,10 @@ export default function Navbar() {
 
             <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '13px' }}>
                 <span>{user.username} ({role})</span>
+                {logoutError && <span role="alert">{logoutError}</span>}
                 <button
                     onClick={handleLogout}
+                    disabled={loggingOut}
                     style={{
                         padding: '6px 12px',
                         backgroundColor: '#ef4444',

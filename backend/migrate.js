@@ -9,7 +9,15 @@ async function migrate() {
         ['006_garage.sql', 'Garage'],
         ['007_mpesa_payments.sql', 'M-Pesa payments'],
         ['008_idempotency.sql', 'Garage idempotency'],
-        ['009_hr_payroll_qr_audit.sql', 'HR payroll audit and QR verification']
+        ['009_hr_payroll_qr_audit.sql', 'HR payroll audit and QR verification'],
+        ['010_shared_workbench.sql', 'Shared workbench parts requests'],
+        ['012_driver_alerts_boss.sql', 'Driver alerts and Boss role'],
+        ['013_fleet_mileage_fuel.sql', 'Fleet mileage and fuel records'],
+        ['014_control_bank_ledger.sql', 'Control bank ledger'],
+        ['015_login_throttle.sql', 'Login throttling'],
+        ['016_auth_sessions.sql', 'Revocable authentication sessions'],
+        ['017_email_mfa.sql', 'Email MFA challenges'],
+        ['018_workbench_issue_cost.sql', 'Workbench issued parts costs']
     ];
 
     for (const [filename, name] of migrations) {

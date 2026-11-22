@@ -10,8 +10,8 @@ router.get('/meta', async (req, res) => {
     try {
         const [baysRes, mechsRes, trucksRes] = await Promise.all([
             pool.query(`SELECT * FROM garage_bays WHERE is_active = TRUE ORDER BY bay_code ASC`),
-            pool.query(`SELECT id, name, role, phone_number FROM users WHERE role IN ('Mechanic', 'Admin', 'FleetManager') ORDER BY name ASC`),
-            pool.query(`SELECT id, plate_number, make, model, status FROM trucks ORDER BY plate_number ASC`)
+            pool.query(`SELECT id, username AS name, role, phone_number FROM users WHERE role IN ('Mechanic', 'Admin', 'FleetManager') ORDER BY username ASC`),
+            pool.query(`SELECT id, plate_number, model, status FROM trucks ORDER BY plate_number ASC`)
         ]);
         res.json({
             bays: baysRes.rows,
@@ -45,7 +45,7 @@ router.get('/work-orders', async (req, res) => {
         const result = await pool.query(
             `SELECT wo.*,
                     b.bay_code, b.bay_name,
-                    m.name AS mechanic_name,
+                    m.username AS mechanic_name,
                     t.plate_number AS linked_truck_plate
              FROM garage_work_orders wo
              LEFT JOIN garage_bays b ON wo.bay_id = b.id
@@ -155,23 +155,40 @@ router.patch('/work-orders/:id', requireRole('Mechanic', 'Admin', 'FleetManager'
             parts_used,
             labor_hours,
             parts_cost,
+            expected_parts_cost,
             labor_cost,
             release_truck_to_active = false
         } = req.body;
 
         await client.query('BEGIN');
 
-        const existingRes = await client.query(`SELECT * FROM garage_work_orders WHERE id = $1`, [id]);
+        const existingRes = await client.query(`SELECT * FROM garage_work_orders WHERE id = $1 FOR UPDATE`, [id]);
         if (existingRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Work order not found.' });
         }
         const current = existingRes.rows[0];
+        if (expected_parts_cost !== undefined &&
+            (!Number.isFinite(Number(expected_parts_cost)) || Number(expected_parts_cost) !== Number(current.parts_cost))) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Parts cost changed since this work order was opened. Reload it before saving.' });
+        }
 
         const nextParts = parts_cost !== undefined ? Number(parts_cost) : Number(current.parts_cost);
         const nextLabor = labor_cost !== undefined ? Number(labor_cost) : Number(current.labor_cost);
         const nextTotal = nextParts + nextLabor;
         const nextStatus = status || current.status;
+        if (['Completed', 'Released'].includes(nextStatus)) {
+            const outstanding = await client.query(
+                `SELECT 1 FROM garage_part_requests
+                 WHERE work_order_id = $1 AND status IN ('Pending', 'Reserved') LIMIT 1`,
+                [id]
+            );
+            if (outstanding.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'Resolve all pending and reserved parts before completing this work order.' });
+            }
+        }
         const completedAt = ['Completed', 'Released'].includes(nextStatus) && !current.completed_at
             ? new Date()
             : current.completed_at;

@@ -121,7 +121,7 @@ export default function HomePage() {
                             <div>
                                 <span className="home-service__eyebrow">NATIONWIDE COVERAGE</span>
                                 <h3>Heavy road freight</h3>
-                                <p>Reliable haulage supported by dispatch visibility and fleet compliance.</p>
+                                <p>Reliable transport for dry goods across Kenya, backed by dispatch visibility and fleet compliance.</p>
                             </div>
                             <button
                                 type="button"
@@ -146,7 +146,7 @@ export default function HomePage() {
                             <div>
                                 <span className="home-service__eyebrow">ATHI RIVER · SYOKIMAU</span>
                                 <h3>Container yards</h3>
-                                <p>Container handling, movement records and compliance across two yards.</p>
+                                <p>Container handling, secure storage, movement records and compliance across two yards.</p>
                             </div>
                             <Link to="/container-depot" className="home-service__link" aria-label="Explore container yard services">↗</Link>
                         </div>

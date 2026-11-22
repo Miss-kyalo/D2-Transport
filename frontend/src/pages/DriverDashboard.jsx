@@ -12,6 +12,14 @@ export default function DriverDashboard() {
     const [refreshKey, setRefreshKey] = useState(0);
     const [handoverTrip, setHandoverTrip] = useState(null);
     const [incidentTrip, setIncidentTrip] = useState(null);
+    const [alertTrucks, setAlertTrucks] = useState([]);
+    const [alertError, setAlertError] = useState('');
+    const [alertMessage, setAlertMessage] = useState('');
+    const [alertSubmitting, setAlertSubmitting] = useState(false);
+    const [alertForm, setAlertForm] = useState({
+        truck_id: '', current_odometer: '', fault_system: '',
+        driver_description: '', requested_spares: '', reported_for_name: ''
+    });
     const [handoverForm, setHandoverForm] = useState({
         finalWeight: '',
         clientStamp: false,
@@ -31,6 +39,14 @@ export default function DriverDashboard() {
         localStorage.clear();
     }
     const driverId = user?.id;
+
+    useEffect(() => {
+        let active = true;
+        api.get('/control/pre-arrival-trucks')
+            .then((response) => { if (active) setAlertTrucks(response.data.trucks); })
+            .catch((requestError) => { if (active) setAlertError(requestError.response?.data?.error || 'Failed to load trucks.'); });
+        return () => { active = false; };
+    }, []);
 
     useEffect(() => {
         if (!driverId) {
@@ -63,6 +79,22 @@ export default function DriverDashboard() {
     const refreshTrips = () => {
         setLoading(true);
         setRefreshKey((key) => key + 1);
+    };
+
+    const submitPreArrival = async (event) => {
+        event.preventDefault();
+        setAlertError('');
+        setAlertMessage('');
+        setAlertSubmitting(true);
+        try {
+            const response = await api.post('/control/pre-arrival-alerts', alertForm);
+            setAlertMessage(response.data.message);
+            setAlertForm({ truck_id: '', current_odometer: '', fault_system: '', driver_description: '', requested_spares: '', reported_for_name: '' });
+        } catch (requestError) {
+            setAlertError(requestError.response?.data?.error || 'Failed to send the pre-arrival alert.');
+        } finally {
+            setAlertSubmitting(false);
+        }
     };
 
     const uploadDeliveryNote = async (event, tripId) => {
@@ -175,6 +207,35 @@ export default function DriverDashboard() {
 
             {error && <p style={{ color: '#ff6b6b', marginTop: '15px' }}>{error}</p>}
             {success && <p style={{ color: '#51cf66', marginTop: '15px' }}>{success}</p>}
+
+            <form onSubmit={submitPreArrival} style={{ marginTop: '25px', padding: '20px', background: '#16261E', border: '1px solid rgba(184,155,106,0.25)', borderRadius: '6px', display: 'grid', gap: '10px' }}>
+                <h3 style={{ margin: 0, color: '#B89B6A' }}>Pre-arrival fault &amp; spares alert</h3>
+                <p style={{ margin: 0 }}>Tell the garage and storekeeper what to prepare before the truck arrives.</p>
+                {alertError && <p role="alert" style={{ color: '#ff6b6b' }}>{alertError}</p>}
+                {alertMessage && <p role="status" style={{ color: '#51cf66' }}>{alertMessage}</p>}
+                <label>Truck
+                    <select required value={alertForm.truck_id} onChange={(event) => setAlertForm({ ...alertForm, truck_id: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }}>
+                        <option value="">Select a truck</option>
+                        {alertTrucks.map((truck) => <option key={truck.id} value={truck.id}>{truck.plate_number} — {truck.model}</option>)}
+                    </select>
+                </label>
+                <label>Current odometer (km)
+                    <input type="number" min="0" step="0.1" required value={alertForm.current_odometer} onChange={(event) => setAlertForm({ ...alertForm, current_odometer: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }} />
+                </label>
+                <label>Fault system
+                    <input required maxLength={60} value={alertForm.fault_system} onChange={(event) => setAlertForm({ ...alertForm, fault_system: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }} />
+                </label>
+                <label>Fault description
+                    <textarea required rows="3" value={alertForm.driver_description} onChange={(event) => setAlertForm({ ...alertForm, driver_description: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }} />
+                </label>
+                <label>Requested spares (optional)
+                    <textarea rows="2" value={alertForm.requested_spares} onChange={(event) => setAlertForm({ ...alertForm, requested_spares: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }} />
+                </label>
+                <label>Reporting for someone else? Name (optional)
+                    <input maxLength={120} value={alertForm.reported_for_name} onChange={(event) => setAlertForm({ ...alertForm, reported_for_name: event.target.value })} style={{ display: 'block', width: '100%', padding: '8px' }} />
+                </label>
+                <button type="submit" disabled={alertSubmitting}>Send pre-arrival alert</button>
+            </form>
 
             <h3 style={{ color: '#B89B6A', marginTop: '25px' }}>Assigned Routes</h3>
             {loading ? (

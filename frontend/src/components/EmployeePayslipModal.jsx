@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
 
-export default function EmployeePayslipModal({ userId, selectedMonth, onClose }) {
+export default function EmployeePayslipModal({ userId, selectedMonth, onClose, self = false }) {
     const [viewMode, setViewMode] = useState('payslip'); // 'payslip' | 'ytd'
     const [loadResult, setLoadResult] = useState({ key: '', statement: null, error: '' });
 
@@ -9,10 +9,11 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose })
     const requestKey = `${userId}:${year}`;
 
     useEffect(() => {
-        if (!userId) return;
+        if (!self && !userId) return;
         let active = true;
 
-        api.get(`/hr/payroll/employee-statement/${userId}`, { params: { year } })
+        const endpoint = self ? '/hr/payroll/my-statement' : `/hr/payroll/employee-statement/${userId}`;
+        api.get(endpoint, { params: { year } })
             .then((res) => {
                 if (active) setLoadResult({ key: requestKey, statement: res.data, error: '' });
             })
@@ -29,19 +30,16 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose })
         return () => {
             active = false;
         };
-    }, [userId, year, requestKey]);
+    }, [userId, year, requestKey, self]);
 
-    if (!userId) return null;
+    if (!self && !userId) return null;
 
     const loading = loadResult.key !== requestKey;
     const statement = loading ? null : loadResult.statement;
     const error = loading ? '' : loadResult.error;
     const employee = statement?.employee || {};
     const records = statement?.records || [];
-    const monthRecord =
-        records.find((r) => r.payroll_month === selectedMonth) ||
-        records[records.length - 1] ||
-        null;
+    const monthRecord = records.find((r) => r.payroll_month === selectedMonth) || null;
     const ytd = statement?.ytd || {};
 
     return (
@@ -181,7 +179,7 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose })
 
                         {viewMode === 'payslip' ? (
                             !monthRecord ? (
-                                <p style={{ color: '#4b5d52' }}>No payroll calculation recorded for {selectedMonth}. Compute a run on the main tab first.</p>
+                                <p style={{ color: '#4b5d52' }}>No statutory payroll calculation recorded for {selectedMonth}.</p>
                             ) : (
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px', fontSize: '13px' }}>
@@ -266,7 +264,6 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose })
                                         <div style={{ fontSize: '12px', textAlign: 'right', color: '#d8e2dc' }}>
                                             <div>Employer NSSF Contribution: KES {Number(monthRecord.employer_nssf).toLocaleString()}</div>
                                             <div>Employer AHL Contribution: KES {Number(monthRecord.employer_ahl).toLocaleString()}</div>
-                                            <div>Leave Bal: {employee.annual_leave_balance ?? 21}d • Off Bal: {employee.accrued_off_days ?? 0}d</div>
                                         </div>
                                     </div>
                                 </>

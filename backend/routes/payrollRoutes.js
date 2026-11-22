@@ -7,7 +7,7 @@ const { calculateEmployeeMonthlyPayroll } = require('../utils/payrollEngine');
 router.use(verifyToken);
 
 // Get all drivers & staff eligible for payroll
-router.get('/staff', requireRole('Admin', 'HR', 'Accounts_Payable'), async (req, res) => {
+router.get('/staff', requireRole('PayrollAccountant'), async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT id, username, role, basic_pay, housing_allowance, off_pay, bank_account_number 
@@ -22,7 +22,7 @@ router.get('/staff', requireRole('Admin', 'HR', 'Accounts_Payable'), async (req,
 });
 
 // Get generated payslips for a specific month (e.g., '2026-11')
-router.get('/cycles/:monthYear', requireRole('Admin', 'HR', 'Accounts_Payable'), async (req, res) => {
+router.get('/cycles/:monthYear', requireRole('PayrollAccountant'), async (req, res) => {
     try {
         const { monthYear } = req.params;
         const result = await pool.query(
@@ -40,7 +40,7 @@ router.get('/cycles/:monthYear', requireRole('Admin', 'HR', 'Accounts_Payable'),
 });
 
 // Generate / Recalculate Monthly Payroll for an Employee
-router.post('/generate', requireRole('Admin', 'HR', 'Accounts_Payable'), async (req, res) => {
+router.post('/generate', requireRole('PayrollAccountant'), async (req, res) => {
     const client = await pool.connect();
     try {
         const {

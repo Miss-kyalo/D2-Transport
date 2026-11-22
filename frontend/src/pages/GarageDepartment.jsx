@@ -114,7 +114,10 @@ export default function GarageDepartment() {
         setError('');
         setMessage('');
         try {
-            const res = await api.patch(`/garage/work-orders/${editingOrder.id}`, editingOrder);
+            const res = await api.patch(`/garage/work-orders/${editingOrder.id}`, {
+                ...editingOrder,
+                expected_parts_cost: editingOrder.initial_parts_cost
+            });
             setMessage(res.data.message);
             setEditingOrder(null);
             loadData();
@@ -319,7 +322,7 @@ export default function GarageDepartment() {
                                     </td>
                                     <td style={{ padding: '8px', fontWeight: 700 }}>{wo.status}</td>
                                     <td style={{ padding: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                        <button type="button" onClick={() => setEditingOrder({ ...wo })} style={{ padding: '5px 9px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>
+                                        <button type="button" onClick={() => setEditingOrder({ ...wo, initial_parts_cost: wo.parts_cost })} style={{ padding: '5px 9px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>
                                             Update Bay
                                         </button>
                                         <button type="button" onClick={() => setActiveJobCard(wo)} style={{ padding: '5px 9px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>

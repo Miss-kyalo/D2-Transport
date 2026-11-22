@@ -4,6 +4,10 @@ const pool = require('../config/db');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 const { calculateKenyaPayroll2026 } = require('../utils/kenyaPayroll2026');
 
+const MONTHLY_OFF_DAYS_TOTAL = 4;
+const MONTHLY_OFF_DAYS_PAID = 2;
+const MONTHLY_OFF_DAYS_TAKEN_TARGET = 2;
+
 // PUBLIC QR TRACKING ENDPOINT (No Login Required — Clients & Gate Guards Scan QR)
 router.get('/public-track/:code', async (req, res) => {
     try {
@@ -11,8 +15,8 @@ router.get('/public-track/:code', async (req, res) => {
 
         // Check Trip Tracking Code first
         const tripRes = await pool.query(
-            `SELECT t.id, t.tracking_code, t.origin, t.destination, t.cargo_details, t.status, t.created_at,
-                    tr.plate_number, u.name AS driver_name
+            `SELECT t.id, t.tracking_code, t.origin, t.destination, t.cargo_description, t.status, t.created_at,
+                    tr.plate_number, u.username AS driver_name
              FROM trips t
              LEFT JOIN trucks tr ON t.truck_id = tr.id
              LEFT JOIN users u ON t.driver_id = u.id
@@ -63,15 +67,14 @@ router.get('/public-track/:code', async (req, res) => {
 router.use(verifyToken);
 
 // List All Driver & Staff Statutory Profiles
-router.get('/profiles', requireRole('Admin', 'FleetManager', 'Dispatcher'), async (req, res) => {
+router.get('/profiles', requireRole('PayrollAccountant', 'Boss'), async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT id, name, email, role, national_id, kra_pin, nssf_number, shif_number,
+            `SELECT id, username AS name, email, role, national_id, kra_pin, nssf_number, shif_number,
                     phone_number, license_number, license_class, license_expiry, employment_date,
-                    basic_pay, housing_allowance, off_day_rate, annual_leave_balance, accrued_off_days,
-                    bank_name, bank_account
+                    basic_pay, housing_allowance, off_day_rate, bank_name, bank_account
              FROM users
-             ORDER BY name ASC`
+             ORDER BY username ASC`
         );
         res.json({ profiles: result.rows });
     } catch (err) {
@@ -80,14 +83,14 @@ router.get('/profiles', requireRole('Admin', 'FleetManager', 'Dispatcher'), asyn
 });
 
 // Update Driver / Employee Statutory & Compensation Profile
-router.put('/profiles/:id', requireRole('Admin', 'FleetManager'), async (req, res) => {
+router.put('/profiles/:id', requireRole('PayrollAccountant'), async (req, res) => {
     try {
         const { id } = req.params;
         const {
             national_id, kra_pin, nssf_number, shif_number, phone_number,
             license_number, license_class, license_expiry,
             basic_pay, housing_allowance, off_day_rate,
-            annual_leave_balance, accrued_off_days, bank_name, bank_account
+            bank_name, bank_account
         } = req.body;
 
         const updated = await pool.query(
@@ -103,17 +106,16 @@ router.put('/profiles/:id', requireRole('Admin', 'FleetManager'), async (req, re
                  basic_pay = $9,
                  housing_allowance = $10,
                  off_day_rate = $11,
-                 annual_leave_balance = $12,
-                 accrued_off_days = $13,
-                 bank_name = $14,
-                 bank_account = $15
-             WHERE id = $16
-             RETURNING *`,
+                 bank_name = $12,
+                 bank_account = $13
+             WHERE id = $14
+             RETURNING id, username AS name, email, role, national_id, kra_pin, nssf_number, shif_number,
+                       phone_number, license_number, license_class, license_expiry,
+                       basic_pay, housing_allowance, off_day_rate, bank_name, bank_account`,
             [
                 national_id || null, kra_pin || null, nssf_number || null, shif_number || null, phone_number || null,
                 license_number || null, license_class || 'CE', license_expiry || null,
                 Number(basic_pay || 0), Number(housing_allowance || 0), Number(off_day_rate || 0),
-                Number(annual_leave_balance ?? 21), Number(accrued_off_days ?? 0),
                 bank_name || null, bank_account || null, id
             ]
         );
@@ -127,30 +129,68 @@ router.put('/profiles/:id', requireRole('Admin', 'FleetManager'), async (req, re
 
 // Submit Leave or Off-Day Request (Drivers & Staff)
 router.post('/leave-requests', async (req, res) => {
+    const client = await pool.connect();
     try {
         const { request_type, start_date, end_date, days_count, reason } = req.body;
-        const inserted = await pool.query(
+        const validRequestTypes = ['ANNUAL_LEAVE', 'OFF_DAY_TAKE', 'SICK_LEAVE'];
+        const days = Number(days_count);
+        const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') &&
+            !Number.isNaN(Date.parse(value)) &&
+            new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+        if (!validRequestTypes.includes(request_type) || !validDate(start_date) || !validDate(end_date) ||
+            start_date > end_date || !Number.isFinite(days) || days <= 0) {
+            return res.status(400).json({ error: 'A valid leave type, date range, and positive day count are required.' });
+        }
+        if (request_type === 'OFF_DAY_TAKE' &&
+            (start_date.slice(0, 7) !== end_date.slice(0, 7) || days > MONTHLY_OFF_DAYS_TAKEN_TARGET)) {
+            return res.status(400).json({ error: 'Off-day requests must be within one month and cannot exceed two days.' });
+        }
+
+        await client.query('BEGIN');
+        if (request_type === 'OFF_DAY_TAKE') {
+            await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [req.user.id]);
+            const existing = await client.query(
+                `SELECT COALESCE(SUM(days_count), 0) AS reserved_days
+                 FROM leave_off_requests
+                 WHERE user_id = $1
+                   AND request_type = 'OFF_DAY_TAKE'
+                   AND status IN ('Pending', 'Approved')
+                   AND start_date >= $2::date
+                   AND start_date < ($2::date + INTERVAL '1 month')`,
+                [req.user.id, `${start_date.slice(0, 7)}-01`]
+            );
+            if (Number(existing.rows[0].reserved_days) + days > MONTHLY_OFF_DAYS_TAKEN_TARGET) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'This request would exceed the two monthly off-days.' });
+            }
+        }
+
+        const inserted = await client.query(
             `INSERT INTO leave_off_requests (user_id, request_type, start_date, end_date, days_count, reason)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [req.user.id, request_type, start_date, end_date, Number(days_count), reason || '']
+            [req.user.id, request_type, start_date, end_date, days, reason || '']
         );
+        await client.query('COMMIT');
         res.status(201).json({ message: 'Leave / Off-day request submitted.', request: inserted.rows[0] });
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
         res.status(500).json({ error: 'Failed to submit leave/off request.' });
+    } finally {
+        client.release();
     }
 });
 
 // List Leave & Off-Day Requests (Admin sees all; Driver sees own)
 router.get('/leave-requests', async (req, res) => {
     try {
-        const isAdmin = ['Admin', 'FleetManager'].includes(req.user.role);
-        const query = isAdmin
-            ? `SELECT r.*, u.name AS employee_name, u.kra_pin, u.annual_leave_balance, u.accrued_off_days
+        const isHr = req.user.role === 'HR';
+        const query = isHr
+            ? `SELECT r.*, u.username AS employee_name, u.annual_leave_balance, u.accrued_off_days
                FROM leave_off_requests r JOIN users u ON r.user_id = u.id ORDER BY r.created_at DESC`
-            : `SELECT r.*, u.name AS employee_name, u.annual_leave_balance, u.accrued_off_days
+            : `SELECT r.*, u.username AS employee_name, u.annual_leave_balance, u.accrued_off_days
                FROM leave_off_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = $1 ORDER BY r.created_at DESC`;
-        const result = await pool.query(query, isAdmin ? [] : [req.user.id]);
+        const result = await pool.query(query, isHr ? [] : [req.user.id]);
         res.json({ requests: result.rows });
     } catch (err) {
         res.status(500).json({ error: 'Failed to load leave & off requests.' });
@@ -158,11 +198,81 @@ router.get('/leave-requests', async (req, res) => {
 });
 
 // Approve / Reject Leave or Off-Day & Automatically Adjust Balances
-router.patch('/leave-requests/:id/review', requireRole('Admin', 'FleetManager'), async (req, res) => {
+router.get('/off-days/summary', requireRole('HR'), async (req, res) => {
+    try {
+        const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+            return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
+        }
+
+        const result = await pool.query(
+            `SELECT u.id, u.username AS employee_name, u.role,
+                    u.annual_leave_balance, u.accrued_off_days,
+                    COALESCE(p.off_days_paid, 0) AS paid_days,
+                    COALESCE(t.taken_days, 0) AS taken_days,
+                    $2::integer AS total_days,
+                    $3::integer AS paid_days_target,
+                    $4::integer AS taken_days_target,
+                    GREATEST(0, $4::numeric - COALESCE(t.taken_days, 0)) AS remaining_taken_days,
+                    CASE
+                        WHEN COALESCE(p.off_days_paid, 0) = $3
+                             AND COALESCE(t.taken_days, 0) >= $4 THEN 'Complete'
+                        WHEN ($1::date + INTERVAL '1 month')::date <= CURRENT_DATE THEN 'Shortfall'
+                        ELSE 'In progress'
+                    END AS status
+             FROM users u
+             LEFT JOIN payroll_records p
+               ON p.user_id = u.id AND p.payroll_month = $5
+             LEFT JOIN (
+                 SELECT user_id, SUM(days_count) AS taken_days
+                 FROM leave_off_requests
+                 WHERE request_type = 'OFF_DAY_TAKE'
+                   AND status = 'Approved'
+                   AND start_date >= $1::date
+                   AND start_date < ($1::date + INTERVAL '1 month')
+                 GROUP BY user_id
+             ) t ON t.user_id = u.id
+             WHERE u.role NOT IN ('Manufacturer', 'Client', 'SpotClient')
+             ORDER BY u.username ASC`,
+            [`${month}-01`, MONTHLY_OFF_DAYS_TOTAL, MONTHLY_OFF_DAYS_PAID, MONTHLY_OFF_DAYS_TAKEN_TARGET, month]
+        );
+        res.json({ month, records: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to load monthly off-day summary.' });
+    }
+});
+
+router.put('/leave-balances/:id', requireRole('HR'), async (req, res) => {
+    const annualLeaveBalance = Number(req.body.annual_leave_balance);
+    const accruedOffDays = Number(req.body.accrued_off_days);
+    if (!Number.isFinite(annualLeaveBalance) || annualLeaveBalance < 0 ||
+        !Number.isFinite(accruedOffDays) || accruedOffDays < 0) {
+        return res.status(400).json({ error: 'Leave balances must be valid non-negative numbers.' });
+    }
+
+    try {
+        const result = await pool.query(
+            `UPDATE users
+             SET annual_leave_balance = $1, accrued_off_days = $2
+             WHERE id = $3 AND role NOT IN ('Manufacturer', 'Client', 'SpotClient')
+             RETURNING id, username AS employee_name, annual_leave_balance, accrued_off_days`,
+            [annualLeaveBalance, accruedOffDays, req.params.id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Employee not found.' });
+        res.json({ message: 'Leave balances updated.', employee: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update leave balances.' });
+    }
+});
+
+router.patch('/leave-requests/:id/review', requireRole('HR'), async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
         const { status } = req.body; // 'Approved' | 'Rejected'
+        if (!['Approved', 'Rejected'].includes(status)) {
+            return res.status(400).json({ error: 'Status must be Approved or Rejected.' });
+        }
 
         await client.query('BEGIN');
         const reqRes = await client.query(`SELECT * FROM leave_off_requests WHERE id = $1`, [id]);
@@ -175,6 +285,25 @@ router.patch('/leave-requests/:id/review', requireRole('Admin', 'FleetManager'),
         if (leaveReq.status !== 'Pending') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Request already reviewed.' });
+        }
+        if (status === 'Approved' && leaveReq.request_type === 'OFF_DAY_TAKE') {
+            await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [leaveReq.user_id]);
+            const monthStart = `${new Date(leaveReq.start_date).toISOString().slice(0, 7)}-01`;
+            const taken = await client.query(
+                `SELECT COALESCE(SUM(days_count), 0) AS taken_days
+                 FROM leave_off_requests
+                 WHERE user_id = $1
+                   AND id <> $2
+                   AND request_type = 'OFF_DAY_TAKE'
+                   AND status = 'Approved'
+                   AND start_date >= $3::date
+                   AND start_date < ($3::date + INTERVAL '1 month')`,
+                [leaveReq.user_id, id, monthStart]
+            );
+            if (Number(taken.rows[0].taken_days) + Number(leaveReq.days_count) > MONTHLY_OFF_DAYS_TAKEN_TARGET) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Approving this request would exceed the two monthly off-days.' });
+            }
         }
 
         await client.query(
@@ -202,9 +331,9 @@ router.patch('/leave-requests/:id/review', requireRole('Admin', 'FleetManager'),
 });
 
 // Generate / Save Monthly Statutory Payroll Run (KRA & Labour Proof)
-router.post('/payroll/run', requireRole('Admin'), async (req, res) => {
+router.post('/payroll/run', requireRole('PayrollAccountant'), async (req, res) => {
     try {
-        const { user_id, payroll_month, off_days_paid = 0, salary_advance = 0 } = req.body;
+        const { user_id, payroll_month, salary_advance = 0 } = req.body;
 
         const userRes = await pool.query(`SELECT * FROM users WHERE id = $1`, [user_id]);
         if (userRes.rows.length === 0) return res.status(404).json({ error: 'Employee not found.' });
@@ -213,7 +342,7 @@ router.post('/payroll/run', requireRole('Admin'), async (req, res) => {
         const calc = calculateKenyaPayroll2026({
             basicPay: emp.basic_pay,
             housingAllowance: emp.housing_allowance,
-            offDaysPaid: off_days_paid,
+            offDaysPaid: MONTHLY_OFF_DAYS_PAID,
             offDayRate: emp.off_day_rate,
             salaryAdvance: salary_advance
         });
@@ -250,23 +379,23 @@ router.post('/payroll/run', requireRole('Admin'), async (req, res) => {
             ]
         );
 
-        res.status(201).json({ message: `Statutory payroll calculated for ${emp.name} (${payroll_month}).`, record: saved.rows[0] });
+        res.status(201).json({ message: `Statutory payroll calculated for ${emp.username} (${payroll_month}).`, record: saved.rows[0] });
     } catch (err) {
         res.status(500).json({ error: 'Failed to process statutory payroll run.' });
     }
 });
 
 // Fetch Full Statutory Audit Register for a Month (KRA P10 / NSSF / SHIF / AHL / Labour)
-router.get('/payroll/register', requireRole('Admin'), async (req, res) => {
+router.get('/payroll/register', requireRole('PayrollAccountant', 'Boss'), async (req, res) => {
     try {
         const month = req.query.month || new Date().toISOString().slice(0, 7);
         const result = await pool.query(
-            `SELECT p.*, u.name, u.role, u.national_id, u.kra_pin, u.nssf_number, u.shif_number,
-                    u.bank_name, u.bank_account, u.annual_leave_balance, u.accrued_off_days
+            `SELECT p.*, u.username AS name, u.role, u.national_id, u.kra_pin, u.nssf_number, u.shif_number,
+                    u.bank_name, u.bank_account
              FROM payroll_records p
              JOIN users u ON p.user_id = u.id
              WHERE p.payroll_month = $1
-             ORDER BY u.name ASC`,
+             ORDER BY u.username ASC`,
             [month]
         );
         res.json({ month, records: result.rows });
@@ -276,14 +405,17 @@ router.get('/payroll/register', requireRole('Admin'), async (req, res) => {
 });
 
 // Fetch Employee Payslip History & Year-to-Date Statutory Summary (KRA / Labour Audit)
-router.get('/payroll/employee-statement/:userId', requireRole('Admin'), async (req, res) => {
+async function employeeStatement(req, res) {
     try {
-        const { userId } = req.params;
+        const userId = req.params.userId || req.user.id;
         const year = String(req.query.year || new Date().getFullYear());
+        if (!/^\d{4}$/.test(year)) {
+            return res.status(400).json({ error: 'Year must use YYYY format.' });
+        }
 
         const empRes = await pool.query(
-            `SELECT id, name, email, role, national_id, kra_pin, nssf_number, shif_number,
-                    phone_number, bank_name, bank_account, annual_leave_balance, accrued_off_days
+            `SELECT id, username AS name, email, role, national_id, kra_pin, nssf_number, shif_number,
+                    phone_number, bank_name, bank_account
              FROM users WHERE id = $1`,
             [userId]
         );
@@ -341,8 +473,15 @@ router.get('/payroll/employee-statement/:userId', requireRole('Admin'), async (r
             ytd
         });
     } catch (err) {
+        console.error('Failed to load employee payroll statement:', err);
         res.status(500).json({ error: 'Failed to load employee payslip and YTD statement.' });
     }
-});
+}
+
+router.get('/payroll/my-statement', requireRole(
+    'Admin', 'HR', 'Accounts_Payable', 'Accounts_Receivable', 'Dispatcher',
+    'FleetManager', 'Mechanic', 'Driver', 'Storekeeper', 'PayrollAccountant', 'Boss'
+), employeeStatement);
+router.get('/payroll/employee-statement/:userId', requireRole('PayrollAccountant', 'Boss'), employeeStatement);
 
 module.exports = router;

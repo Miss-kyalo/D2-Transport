@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JobCardStorePanel from '../components/JobCardStorePanel';
+import SharedWorkbenchPanel from '../components/SharedWorkbenchPanel';
 import QuotePreviewModal from '../components/QuotePreviewModal';
 import RigInspectionCanvas from '../components/RigInspectionCanvas';
 import {
@@ -28,6 +29,19 @@ function readImageAsDataUrl(file) {
 }
 
 export default function GarageWorkbenchPage() {
+    const role = localStorage.getItem('role');
+    return (
+        <>
+            <main className="garage-workbench bg-slate-950 p-4 text-slate-100 md:p-6">
+                <h1 className="mb-4 text-xl font-bold text-white">Garage repair workbench</h1>
+                <SharedWorkbenchPanel />
+            </main>
+            {['Admin', 'Mechanic'].includes(role) && <LegacyGarageWorkbench />}
+        </>
+    );
+}
+
+function LegacyGarageWorkbench() {
     const [jobCardId, setJobCardId] = useState('1');
     const [vehicleRole, setVehicleRole] = useState('TRACTOR');
     const [stage, setStage] = useState('DIAGNOSIS');
@@ -212,15 +226,12 @@ export default function GarageWorkbenchPage() {
                         Garage repair workbench
                     </h1>
                     <p className="max-w-3xl text-sm text-slate-400">
-                        Log inspection findings, reserve and issue parts, record core returns,
-                        and prepare a customer quote.
+                        Manage shared work orders and their parts requests. Historical job cards are shown separately below.
                     </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <label className="sr-only" htmlFor="garage-job-card-id">
-                        Job card ID
-                    </label>
+                    <label htmlFor="garage-job-card-id" className="text-sm text-slate-300">Historical job card ID</label>
                     <input
                         id="garage-job-card-id"
                         type="number"
@@ -247,6 +258,7 @@ export default function GarageWorkbenchPage() {
                 </div>
             </header>
 
+            <h2 className="mb-3 text-lg font-semibold">Historical job-card inspection and stock actions</h2>
             {feedback && (
                 <div
                     className="mb-5 rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-amber-300"

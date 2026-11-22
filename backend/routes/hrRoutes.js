@@ -16,9 +16,6 @@ router.post('/onboard-user', ...hrAccess, async (req, res) => {
         company_name,
         phone_number,
         allowed_accounts_modules = [],
-        basic_pay = 0,
-        housing_allowance = 0,
-        off_pay = 0,
         bank_account_number,
         bank_branch_code
     } = req.body;
@@ -37,9 +34,8 @@ router.post('/onboard-user', ...hrAccess, async (req, res) => {
         const result = await pool.query(
             `INSERT INTO users (
                 username, email, password_hash, role, company_name, phone_number,
-                onboarding_status, allowed_accounts_modules, basic_pay, housing_allowance,
-                off_pay, bank_account_number, bank_branch_code
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                onboarding_status, allowed_accounts_modules, bank_account_number, bank_branch_code
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING id, username, email, role, phone_number, onboarding_status`,
             [
                 username,
@@ -50,9 +46,6 @@ router.post('/onboard-user', ...hrAccess, async (req, res) => {
                 phone_number,
                 initialStatus,
                 JSON.stringify(allowed_accounts_modules),
-                basic_pay,
-                housing_allowance,
-                off_pay,
                 bank_account_number || null,
                 bank_branch_code || null
             ]

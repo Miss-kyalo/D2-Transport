@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
+import { downloadDocument } from '../lib/downloadDocument';
 import EirPrintModal from '../components/EirPrintModal';
 
 export default function DepotDashboard() {
@@ -521,7 +522,7 @@ export default function DepotDashboard() {
                                 <strong>{lic.authority}: {lic.license_name}</strong>
                                 <div>Ref: {lic.license_number}</div>
                                 <div>Expires: {new Date(lic.expiry_date).toLocaleDateString()}</div>
-                                {lic.document_url && <a href={new URL(lic.document_url, new URL(api.defaults.baseURL, window.location.origin).origin).href} target="_blank" rel="noreferrer">Open attachment</a>}
+                                {lic.document_url && <button type="button" onClick={() => downloadDocument(lic.document_url).catch((err) => setError(err.message || 'Failed to download attachment.'))}>Download attachment</button>}
                             </div>
                         ))}
                     </div>

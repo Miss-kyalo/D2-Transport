@@ -18,7 +18,7 @@ const storage = multer.diskStorage({
         cb(null, `depot-${unique}${path.extname(file.originalname)}`);
     }
 });
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
 router.use(verifyToken);
 
@@ -581,7 +581,7 @@ router.post('/containers/:id/dispatch-trip', requireRole('Admin', 'Dispatcher', 
         const trackingCode = `D2-${Date.now().toString().slice(-6)}`;
         const tripRes = await client.query(
             `INSERT INTO trips
-             (tracking_code, truck_id, driver_id, origin, destination, cargo_details, status)
+             (tracking_code, truck_id, driver_id, origin, destination, cargo_description, status)
              VALUES ($1, $2, $3, $4, $5, $6, 'In Transit')
              RETURNING *`,
             [

@@ -3,9 +3,9 @@ import api from '../api';
 import EmployeePayslipModal from '../components/EmployeePayslipModal';
 
 export default function HrPayrollAuditSuite() {
-    const [tab, setTab] = useState('payroll'); // 'payroll' | 'profiles' | 'leave'
+    const readOnly = localStorage.getItem('role') === 'Boss';
+    const [tab, setTab] = useState('payroll');
     const [profiles, setProfiles] = useState([]);
-    const [requests, setRequests] = useState([]);
     const [register, setRegister] = useState([]);
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [message, setMessage] = useState('');
@@ -18,28 +18,16 @@ export default function HrPayrollAuditSuite() {
     // Payroll Run Form
     const [runForm, setRunForm] = useState({
         user_id: '',
-        off_days_paid: 0,
         salary_advance: 0
-    });
-
-    // Leave / Off Request Form
-    const [leaveForm, setLeaveForm] = useState({
-        request_type: 'OFF_DAY_ENCASH',
-        start_date: '',
-        end_date: '',
-        days_count: 1,
-        reason: ''
     });
 
     const loadAll = async (targetMonth = month) => {
         try {
-            const [profRes, reqRes, regRes] = await Promise.all([
+            const [profRes, regRes] = await Promise.all([
                 api.get('/hr/profiles'),
-                api.get('/hr/leave-requests'),
                 api.get('/hr/payroll/register', { params: { month: targetMonth } })
             ]);
             setProfiles(profRes.data.profiles || []);
-            setRequests(reqRes.data.requests || []);
             setRegister(regRes.data.records || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load HR & Payroll records.');
@@ -50,13 +38,11 @@ export default function HrPayrollAuditSuite() {
         let active = true;
         Promise.all([
             api.get('/hr/profiles'),
-            api.get('/hr/leave-requests'),
             api.get('/hr/payroll/register', { params: { month } })
         ])
-            .then(([profRes, reqRes, regRes]) => {
+            .then(([profRes, regRes]) => {
                 if (!active) return;
                 setProfiles(profRes.data.profiles || []);
-                setRequests(reqRes.data.requests || []);
                 setRegister(regRes.data.records || []);
             })
             .catch((err) => {
@@ -92,34 +78,10 @@ export default function HrPayrollAuditSuite() {
                 payroll_month: month
             });
             setMessage(res.data.message);
-            setRunForm({ user_id: '', off_days_paid: 0, salary_advance: 0 });
+            setRunForm({ user_id: '', salary_advance: 0 });
             loadAll(month);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to calculate payroll.');
-        }
-    };
-
-    const handleSubmitLeave = async (e) => {
-        e.preventDefault();
-        setError('');
-        setMessage('');
-        try {
-            const res = await api.post('/hr/leave-requests', leaveForm);
-            setMessage(res.data.message);
-            setLeaveForm({ request_type: 'OFF_DAY_ENCASH', start_date: '', end_date: '', days_count: 1, reason: '' });
-            loadAll(month);
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to submit request.');
-        }
-    };
-
-    const handleReviewLeave = async (id, status) => {
-        try {
-            const res = await api.patch(`/hr/leave-requests/${id}/review`, { status });
-            setMessage(res.data.message);
-            loadAll(month);
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to review request.');
         }
     };
 
@@ -151,14 +113,13 @@ export default function HrPayrollAuditSuite() {
                         <div style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#a3b899', fontWeight: 700 }}>
                             D2-Transport (K) Ltd • Human Capital & Statutory Compliance
                         </div>
-                        <h1 style={{ margin: '4px 0 0', fontSize: '24px' }}>KRA & Labour-Proof HR & 2026 Payroll Suite</h1>
+                        <h1 style={{ margin: '4px 0 0', fontSize: '24px' }}>KRA &amp; Labour-Proof 2026 Payroll Suite</h1>
                     </div>
 
                     <div className="no-print" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         {[
                             { id: 'payroll', label: '2026 Statutory Payroll & Audit Print' },
-                            { id: 'profiles', label: 'Driver & Staff Statutory Profiles' },
-                            { id: 'leave', label: 'Leave & Off-Day Counter' }
+                            { id: 'profiles', label: 'Driver & Staff Statutory Profiles' }
                         ].map((item) => (
                             <button
                                 key={item.id}
@@ -187,6 +148,8 @@ export default function HrPayrollAuditSuite() {
                 {/* TAB 1: 2026 STATUTORY PAYROLL & AUDIT PRINT PACK */}
                 {tab === 'payroll' && (
                     <div>
+                        {readOnly && <label className="no-print">Payroll month <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></label>}
+                        {!readOnly && (
                         <form onSubmit={handleRunPayroll} className="no-print" style={{ backgroundColor: '#fff', border: '1px solid #d6d3c9', borderRadius: '10px', padding: '18px', marginBottom: '20px', display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>Select Driver / Staff</label>
@@ -204,8 +167,8 @@ export default function HrPayrollAuditSuite() {
                                 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>Off Days Paid</label>
-                                <input type="number" step="0.5" value={runForm.off_days_paid} onChange={(e) => setRunForm({ ...runForm, off_days_paid: e.target.value })} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>Paid Off-Days (Fixed)</label>
+                                <div style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9' }}>2 days per month</div>
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>Salary Advance (KES)</label>
@@ -215,6 +178,7 @@ export default function HrPayrollAuditSuite() {
                                 Compute Statutory Run
                             </button>
                         </form>
+                        )}
 
                         {/* Printable Statutory Audit Register */}
                         <div style={{ backgroundColor: '#fff', border: '1px solid #d6d3c9', borderRadius: '10px', padding: '20px', overflowX: 'auto' }}>
@@ -315,7 +279,6 @@ export default function HrPayrollAuditSuite() {
                                     <th style={{ padding: '8px' }}>NSSF / SHIF</th>
                                     <th style={{ padding: '8px' }}>License & Expiry</th>
                                     <th style={{ padding: '8px' }}>Basic / Housing / Off Rate</th>
-                                    <th style={{ padding: '8px' }}>Leave / Off Bal</th>
                                     <th style={{ padding: '8px' }}>Action</th>
                                 </tr>
                             </thead>
@@ -345,10 +308,7 @@ export default function HrPayrollAuditSuite() {
                                             <div style={{ fontSize: '12px', color: '#52665a' }}>Off Rate: KES {Number(p.off_day_rate).toLocaleString()}/day</div>
                                         </td>
                                         <td style={{ padding: '8px' }}>
-                                            <div>Leave: <strong>{p.annual_leave_balance}d</strong></div>
-                                            <div>Offs: <strong>{p.accrued_off_days}d</strong></div>
-                                        </td>
-                                        <td style={{ padding: '8px' }}>
+                                            {!readOnly && (
                                             <button
                                                 type="button"
                                                 onClick={() => setEditingProfile({
@@ -359,89 +319,12 @@ export default function HrPayrollAuditSuite() {
                                             >
                                                 Edit Profile
                                             </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-                )}
-
-                {/* TAB 3: LEAVE & OFF-DAY COUNTER + APPROVAL QUEUE */}
-                {tab === 'leave' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
-                        <form onSubmit={handleSubmitLeave} style={{ backgroundColor: '#fff', border: '1px solid #d6d3c9', borderRadius: '10px', padding: '18px' }}>
-                            <h3 style={{ marginTop: 0 }}>Request Leave or Off-Day</h3>
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>Request Type</label>
-                                <select value={leaveForm.request_type} onChange={(e) => setLeaveForm({ ...leaveForm, request_type: e.target.value })} style={{ width: '100%', padding: '8px' }}>
-                                    <option value="OFF_DAY_ENCASH">Encash Worked Off-Days (Paid in Payroll)</option>
-                                    <option value="OFF_DAY_TAKE">Take Earned Off-Days</option>
-                                    <option value="ANNUAL_LEAVE">Annual Statutory Leave (21 Days/Yr)</option>
-                                    <option value="SICK_LEAVE">Sick Leave</option>
-                                </select>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '12px' }}>Start Date</label>
-                                    <input type="date" required value={leaveForm.start_date} onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '12px' }}>End Date</label>
-                                    <input type="date" required value={leaveForm.end_date} onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-                                </div>
-                            </div>
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ display: 'block', fontSize: '12px' }}>Days Count</label>
-                                <input type="number" step="0.5" required value={leaveForm.days_count} onChange={(e) => setLeaveForm({ ...leaveForm, days_count: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-                            </div>
-                            <div style={{ marginBottom: '12px' }}>
-                                <label style={{ display: 'block', fontSize: '12px' }}>Notes / Trip Reference</label>
-                                <input type="text" value={leaveForm.reason} onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-                            </div>
-                            <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: '#143628', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}>
-                                Submit Leave / Off Request
-                            </button>
-                        </form>
-
-                        <div style={{ backgroundColor: '#fff', border: '1px solid #d6d3c9', borderRadius: '10px', padding: '18px' }}>
-                            <h3 style={{ marginTop: 0 }}>Leave & Off-Day Ledger & Approvals</h3>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
-                                <thead>
-                                    <tr style={{ backgroundColor: '#eef2ee', borderBottom: '2px solid #143628' }}>
-                                        <th style={{ padding: '8px' }}>Employee</th>
-                                        <th style={{ padding: '8px' }}>Type</th>
-                                        <th style={{ padding: '8px' }}>Dates & Days</th>
-                                        <th style={{ padding: '8px' }}>Remaining Bal</th>
-                                        <th style={{ padding: '8px' }}>Status</th>
-                                        <th style={{ padding: '8px' }}>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {requests.map((r) => (
-                                        <tr key={r.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                            <td style={{ padding: '8px' }}><strong>{r.employee_name}</strong></td>
-                                            <td style={{ padding: '8px' }}>{r.request_type}</td>
-                                            <td style={{ padding: '8px' }}>
-                                                {new Date(r.start_date).toLocaleDateString()} ({r.days_count}d)
-                                            </td>
-                                            <td style={{ padding: '8px' }}>
-                                                Leave: {r.annual_leave_balance}d • Off: {r.accrued_off_days}d
-                                            </td>
-                                            <td style={{ padding: '8px', fontWeight: 700 }}>{r.status}</td>
-                                            <td style={{ padding: '8px', display: 'flex', gap: '6px' }}>
-                                                {r.status === 'Pending' && (
-                                                    <>
-                                                        <button type="button" onClick={() => handleReviewLeave(r.id, 'Approved')} style={{ padding: '4px 8px', backgroundColor: '#15803d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Approve</button>
-                                                        <button type="button" onClick={() => handleReviewLeave(r.id, 'Rejected')} style={{ padding: '4px 8px', backgroundColor: '#b91c1c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Reject</button>
-                                                    </>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
                     </div>
                 )}
 
@@ -460,8 +343,6 @@ export default function HrPayrollAuditSuite() {
                                 <div><label>Basic Pay (KES)</label><input type="number" value={editingProfile.basic_pay || 0} onChange={(e) => setEditingProfile({ ...editingProfile, basic_pay: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
                                 <div><label>Housing Allowance (KES)</label><input type="number" value={editingProfile.housing_allowance || 0} onChange={(e) => setEditingProfile({ ...editingProfile, housing_allowance: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
                                 <div><label>Off-Day Rate (KES/day)</label><input type="number" value={editingProfile.off_day_rate || 0} onChange={(e) => setEditingProfile({ ...editingProfile, off_day_rate: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
-                                <div><label>Accrued Off Days</label><input type="number" step="0.5" value={editingProfile.accrued_off_days || 0} onChange={(e) => setEditingProfile({ ...editingProfile, accrued_off_days: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
-                                <div><label>Annual Leave Balance</label><input type="number" step="0.5" value={editingProfile.annual_leave_balance ?? 21} onChange={(e) => setEditingProfile({ ...editingProfile, annual_leave_balance: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
                                 <div><label>Bank / M-Pesa Account</label><input type="text" value={editingProfile.bank_account || ''} onChange={(e) => setEditingProfile({ ...editingProfile, bank_account: e.target.value })} style={{ width: '100%', padding: '8px' }} /></div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
