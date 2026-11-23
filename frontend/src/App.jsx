@@ -127,6 +127,9 @@ export default function App() {
                 />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="/socials" element={<ProtectedRoute><SocialsHub /></ProtectedRoute>} />
+<Route path="/audit" element={<ProtectedRoute allowedRole="Admin"><ForensicAuditReport /></ProtectedRoute>} />
+           
             </Routes>
             </Suspense>
             </PageErrorBoundary>

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const BASE_URL = process.env.TEST_API_URL || `http://localhost:${process.env.PORT || 5000}/api/garage`;
 const AUTH_TOKEN = process.env.TEST_AUTH_TOKEN || '';
+const garageFlowTest = AUTH_TOKEN ? test : test.skip;
 
 async function api(path, { method = 'GET', body = null } = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -17,7 +18,7 @@ async function api(path, { method = 'GET', body = null } = {}) {
   return { status: res.status, data };
 }
 
-test('rejects over-reserving available stock with 409', async () => {
+garageFlowTest('rejects over-reserving available stock with 409', async () => {
   const { status, data } = await api('/job-cards/1/reserve-part', {
     method: 'POST',
     body: {
@@ -31,7 +32,7 @@ test('rejects over-reserving available stock with 409', async () => {
   assert.ok(data.error);
 });
 
-test('blocks READY transition when core part is issued without core return, then allows after return', async () => {
+garageFlowTest('blocks READY transition when core part is issued without core return, then allows after return', async () => {
   const uniqueSuffix = Date.now();
   const created = await api('/job-cards', {
     method: 'POST',
@@ -101,7 +102,7 @@ test('blocks READY transition when core part is issued without core return, then
   assert.equal(allowedReady.data.status, 'READY');
 });
 
-test('flags repeat fault when pin is placed on a recently pinned zone', async () => {
+garageFlowTest('flags repeat fault when pin is placed on a recently pinned zone', async () => {
   const res = await api('/job-cards/2/pins', {
     method: 'POST',
     body: {

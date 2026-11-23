@@ -6,6 +6,11 @@ const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 const hrAccess = [verifyToken, requireRole('HR', 'Admin')];
+const provisionableRoles = [
+    'Admin', 'HR', 'Accounts_Payable', 'Accounts_Receivable', 'Dispatcher',
+    'FleetManager', 'Mechanic', 'Driver', 'Manufacturer', 'Client', 'SpotClient',
+    'PayrollAccountant', 'Boss', 'Storekeeper'
+];
 
 router.post('/onboard-user', ...hrAccess, async (req, res) => {
     const {
@@ -20,9 +25,17 @@ router.post('/onboard-user', ...hrAccess, async (req, res) => {
         bank_branch_code
     } = req.body;
 
-    if (!username || !email || !password || !role || !phone_number) {
+    if (typeof username !== 'string' || !username.trim() || username.trim().length > 100 ||
+        typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.trim().length > 150 ||
+        typeof password !== 'string' || Buffer.byteLength(password, 'utf8') < 12 || Buffer.byteLength(password, 'utf8') > 72 ||
+        !provisionableRoles.includes(role) ||
+        typeof phone_number !== 'string' || !phone_number.trim() || phone_number.trim().length > 30 ||
+        (company_name !== undefined && company_name !== null &&
+            (typeof company_name !== 'string' || company_name.length > 150)) ||
+        !Array.isArray(allowed_accounts_modules) ||
+        allowed_accounts_modules.some((module) => typeof module !== 'string' || module.length > 80)) {
         return res.status(400).json({
-            error: 'Username, email, password, role, and phone number are required.'
+            error: 'Provide a valid username, email, password (12–72 UTF-8 bytes), role, phone, company name, and accounts module list.'
         });
     }
 
@@ -35,15 +48,15 @@ router.post('/onboard-user', ...hrAccess, async (req, res) => {
             `INSERT INTO users (
                 username, email, password_hash, role, company_name, phone_number,
                 onboarding_status, allowed_accounts_modules, bank_account_number, bank_branch_code
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              RETURNING id, username, email, role, phone_number, onboarding_status`,
             [
-                username,
-                email,
+               username.trim(),
+               email.trim().toLowerCase(),
                 passwordHash,
                 role,
-                company_name || null,
-                phone_number,
+               company_name?.trim() || null,
+               phone_number.trim(),
                 initialStatus,
                 JSON.stringify(allowed_accounts_modules),
                 bank_account_number || null,

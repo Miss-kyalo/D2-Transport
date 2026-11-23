@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { STAFF_ROLES } from '../auth';
+import SocialsHub from './pages/SocialsHub';
+import ForensicAuditReport from './pages/ForensicAuditReport';
 
 export default function Navbar() {
     const location = useLocation();

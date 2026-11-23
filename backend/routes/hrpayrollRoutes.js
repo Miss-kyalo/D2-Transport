@@ -74,6 +74,8 @@ router.get('/profiles', requireRole('PayrollAccountant', 'Boss'), async (req, re
                     phone_number, license_number, license_class, license_expiry, employment_date,
                     basic_pay, housing_allowance, off_day_rate, bank_name, bank_account
              FROM users
+             WHERE role NOT IN ('Manufacturer', 'Client', 'SpotClient')
+               AND (onboarding_status IS NULL OR onboarding_status = 'Active')
              ORDER BY username ASC`
         );
         res.json({ profiles: result.rows });
@@ -92,6 +94,26 @@ router.put('/profiles/:id', requireRole('PayrollAccountant'), async (req, res) =
             basic_pay, housing_allowance, off_day_rate,
             bank_name, bank_account
         } = req.body;
+
+        const compensation = [basic_pay, housing_allowance, off_day_rate].map((value) =>
+            value === undefined || value === null || value === '' ? 0 : Number(value));
+        const validOptionalText = (value, maxLength) =>
+            value === undefined || value === null || value === '' ||
+            (typeof value === 'string' && value.length <= maxLength);
+        const validDate = license_expiry === undefined || license_expiry === null || license_expiry === '' ||
+            (typeof license_expiry === 'string' &&
+                /^\d{4}-\d{2}-\d{2}$/.test(license_expiry) &&
+                !Number.isNaN(Date.parse(license_expiry)) &&
+                new Date(`${license_expiry}T00:00:00.000Z`).toISOString().slice(0, 10) === license_expiry);
+        if (!/^[1-9]\d*$/.test(id) || compensation.some((value) =>
+            !Number.isFinite(value) || value < 0 || value > 9_999_999_999.99) || !validDate ||
+            !validOptionalText(national_id, 30) || !validOptionalText(kra_pin, 20) ||
+            !validOptionalText(nssf_number, 30) || !validOptionalText(shif_number, 30) ||
+            !validOptionalText(phone_number, 30) || !validOptionalText(license_number, 40) ||
+            !validOptionalText(license_class, 20) || !validOptionalText(bank_name, 80) ||
+            !validOptionalText(bank_account, 50)) {
+            return res.status(400).json({ error: 'Profile fields or compensation amounts are invalid.' });
+        }
 
         const updated = await pool.query(
             `UPDATE users
@@ -115,7 +137,7 @@ router.put('/profiles/:id', requireRole('PayrollAccountant'), async (req, res) =
             [
                 national_id || null, kra_pin || null, nssf_number || null, shif_number || null, phone_number || null,
                 license_number || null, license_class || 'CE', license_expiry || null,
-                Number(basic_pay || 0), Number(housing_allowance || 0), Number(off_day_rate || 0),
+                ...compensation,
                 bank_name || null, bank_account || null, id
             ]
         );
@@ -123,6 +145,7 @@ router.put('/profiles/:id', requireRole('PayrollAccountant'), async (req, res) =
         if (updated.rows.length === 0) return res.status(404).json({ error: 'Employee profile not found.' });
         res.json({ message: 'Statutory profile updated.', profile: updated.rows[0] });
     } catch (err) {
+        console.error('Failed to update employee statutory profile:', err);
         res.status(500).json({ error: 'Failed to update employee profile.' });
     }
 });
@@ -334,8 +357,19 @@ router.patch('/leave-requests/:id/review', requireRole('HR'), async (req, res) =
 router.post('/payroll/run', requireRole('PayrollAccountant'), async (req, res) => {
     try {
         const { user_id, payroll_month, salary_advance = 0 } = req.body;
+        const advance = Number(salary_advance);
+        if (!/^[1-9]\d*$/.test(String(user_id)) ||
+            typeof payroll_month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(payroll_month) ||
+            !Number.isFinite(advance) || advance < 0 || advance > 9_999_999_999.99) {
+            return res.status(400).json({ error: 'A valid employee, YYYY-MM payroll month, and non-negative advance are required.' });
+        }
 
-        const userRes = await pool.query(`SELECT * FROM users WHERE id = $1`, [user_id]);
+        const userRes = await pool.query(
+            `SELECT * FROM users
+             WHERE id = $1 AND role NOT IN ('Manufacturer', 'Client', 'SpotClient')
+               AND (onboarding_status IS NULL OR onboarding_status = 'Active')`,
+            [user_id]
+        );
         if (userRes.rows.length === 0) return res.status(404).json({ error: 'Employee not found.' });
         const emp = userRes.rows[0];
 
@@ -344,8 +378,11 @@ router.post('/payroll/run', requireRole('PayrollAccountant'), async (req, res) =
             housingAllowance: emp.housing_allowance,
             offDaysPaid: MONTHLY_OFF_DAYS_PAID,
             offDayRate: emp.off_day_rate,
-            salaryAdvance: salary_advance
+            salaryAdvance: advance
         });
+        if (calc.net_pay < 0) {
+            return res.status(400).json({ error: 'Deductions exceed gross pay; the payroll run was not saved.' });
+        }
 
         const saved = await pool.query(
             `INSERT INTO payroll_records
@@ -381,6 +418,7 @@ router.post('/payroll/run', requireRole('PayrollAccountant'), async (req, res) =
 
         res.status(201).json({ message: `Statutory payroll calculated for ${emp.username} (${payroll_month}).`, record: saved.rows[0] });
     } catch (err) {
+        console.error('Failed to process statutory payroll run:', err);
         res.status(500).json({ error: 'Failed to process statutory payroll run.' });
     }
 });

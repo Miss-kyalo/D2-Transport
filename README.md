@@ -20,37 +20,75 @@ npm --prefix frontend install
 
 ## Run locally
 
-For local API runs, configure `backend/.env` with `DATABASE_URL`, `JWT_SECRET`,
-and `PORT`; add `GEMINI_API_KEY` to enable garage image inspection. Docker
-Compose reads `POSTGRES_PASSWORD` and `JWT_SECRET` from the shell or a
-project-root `.env` file; set `GEMINI_API_KEY` there to enable the same feature.
-Compose does not use hard-coded credentials.
-`JWT_SECRET` is required; production requires at least 32 characters and
-rejects the old development default. Generate a unique random secret for each
-environment (for example, `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
-Rotating it invalidates existing sessions.
-Start PostgreSQL, then run the API and frontend in separate terminals:
+Configure separate database admin/runtime passwords and a JWT secret. Production
+JWT and runtime DB secrets must each be at least 32 characters; generate unique
+random values per environment, and rotate JWT secrets only as a planned
+session-invalidating event. Add `GEMINI_API_KEY` to enable garage image
+inspection. Compose reads these values from environment variables or a
+project-root `.env` file and does not use hard-coded credentials.
+
+For local development with Compose PostgreSQL and a host-run backend:
 
 ```sh
-export POSTGRES_PASSWORD='choose-a-local-database-password'
+export POSTGRES_PASSWORD="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+export APP_DB_USER='d2_app'
+export APP_DB_PASSWORD="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
 export JWT_SECRET="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
 docker compose up -d db
+docker compose run --rm migrator
+export PGHOST=localhost PGPORT=5432 PGUSER="$APP_DB_USER" PGPASSWORD="$APP_DB_PASSWORD"
 npm --prefix backend run dev
 npm --prefix frontend run dev
 ```
 
-After the initial schema has been installed, apply the application migrations
-to the database configured in `backend/.env`:
+## Production deployment baseline
+
+The Compose stack binds PostgreSQL and the API only to loopback
+(`127.0.0.1:5432` and `127.0.0.1:5000`), so neither is publicly exposed by
+Compose. Put a maintained TLS reverse proxy in front of the API,
+expose only HTTPS publicly, restrict host firewall access, and set
+`TRUST_PROXY_CIDRS` to the proxy's exact source IPs/CIDRs. If the browser app is
+served from a different origin, set `CORS_ORIGINS` to a comma-separated list
+of exact `https://` origins; do not use `*`. Without an origin list, production
+API access is same-origin only.
+
+Back up PostgreSQL and uploads before deployments, test restore procedures, and
+review migration output before promoting a release. The API container runs as
+an unprivileged user with a read-only root filesystem; uploads remain in
+`backend/uploads` on the host. Preserve that directory when deploying existing
+records, restrict host access, and ensure it is writable by the container's
+`node` user (UID/GID 1000). For external PostgreSQL, set `PGSSL=true` to validate TLS certificates, and
+optionally set `PGSSL_CA` to a mounted CA bundle path. Set a distinct
+`APP_DB_USER` and an `APP_DB_PASSWORD` of at least 32 random characters.
+Configure secrets using a protected deployment secret store, not source
+control, chat, or a committed `.env` file. Keep `EMAIL_MFA_ENABLED=false`
+until SMTP delivery and account email addresses have been tested; after that,
+enable it as a planned rollout because staff must sign in again.
+
+These settings are a deployment baseline, not a production-readiness
+certification. Before launch, complete a security review, verify least-privilege
+database credentials, test backup restoration and incident response, and run
+role-specific end-to-end acceptance tests against the actual deployment.
 
 ```sh
-cd backend
-node migrate.js
-node scripts/smokeTest.js
+docker compose up -d db
+docker compose run --rm migrator
+docker compose up -d backend
 ```
 
-`migrate.js` applies migrations `005` through `010` and `012` through `018` in order; the initial schema
-must already be present. The smoke check verifies the compliance helper and
-table presence, not the HTTP Gate-In/Gate-Out flow.
+For a new database, initialization creates only the base schema; the migrator
+applies application migrations and provisions the runtime database role before
+the backend is started. In deployments, source `POSTGRES_PASSWORD`,
+`APP_DB_PASSWORD`, and `JWT_SECRET` from a secret manager, not shell history or
+a committed `.env` file.
+
+`migrate.js` serializes runs with a PostgreSQL advisory lock, records each
+success in `schema_migrations`, and grants the distinct application role only
+data access to existing and future public-schema tables/sequences. Legacy
+databases without a migration ledger will safely re-run the idempotent
+migration list once and then track subsequent runs. Use the same migration
+account for future releases. Do not start the API before migration/provisioning
+has completed.
 
 The public garage overview is available at `/garage`. After logging in with an
 Admin, Mechanic, FleetManager, or Storekeeper account, the shared workbench is
@@ -64,8 +102,8 @@ cost and total estimate, and retain the unit-cost snapshot on the request. Older
 issues are not retroactively repriced. Because inventory costs are in KES,
 issuing to non-KES work orders is blocked until currency conversion is available.
 The historical job-card workflow remains separate; its AI image inspection
-requires `GEMINI_API_KEY`. Run `node migrate.js` after updating the backend
-to add the shared-workbench schema and Storekeeper role.
+requires `GEMINI_API_KEY`. Run `docker compose run --rm migrator` after updating
+the backend to apply database migrations and provision the runtime role.
 
 Drivers can submit a pre-arrival fault and spares alert from their dashboard,
 including an optional name when reporting for someone else. The garage workbench
@@ -78,7 +116,10 @@ document verification process is complete.
 Staff can view their own recorded statutory payslips and annual payroll summary
 at `/my-payslips`. Payroll calculations become visible there as soon as they
 are saved; the system does not yet have a payroll finalization workflow.
-This view does not provide a P9 or include legacy driver payslips.
+The annual view provides a printable PAYE/P9 support schedule from stored
+calculations; payroll must verify it against the current KRA P9 form before
+filing. Driver accounts also see their separate, read-only legacy payslip
+history.
 
 The `/control` page shows the existing garage inventory ledger and, for permitted
 fleet and accounting roles, daily mileage and fuel records. Save only changed
@@ -89,21 +130,23 @@ entries; Accounts Payable, Accounts Receivable and Boss may record bank entries,
 which remain unreconciled until independently checked. Petty cash and additional
 inventory controls from the proposed hub are not yet enabled.
 
-To create local demo logins for every application role, first set the initial
-schema up, then run:
+To create local demo logins for every application role, first apply the base
+schema and application migrations, then run:
 
 ```sh
 DEMO_ACCOUNT_PASSWORD='choose-a-password-of-at-least-12-characters' \
   npm --prefix backend run seed:demo
 ```
 
-All demo accounts use the supplied password and have no phone number. The seed
-can be rerun to reset their password; it refuses to overwrite an existing
-account unless its demo email matches. Logins with web portals are `demo_admin`,
-`demo_fleet_manager`, `demo_driver`, `demo_manufacturer`, `demo_client`, and
-`demo_spot_client`. Other roles are for API permission testing. Demo accounts
-do not create sample trips or trucks. Use this only with a local/test database,
-never production.
+All demo accounts use the supplied password and have no phone number. Their
+usernames are `demo_admin`, `demo_hr`, `demo_accounts_payable`,
+`demo_accounts_receivable`, `demo_payroll_accountant`, `demo_boss`,
+`demo_dispatcher`, `demo_fleet_manager`, `demo_mechanic`, `demo_storekeeper`,
+`demo_driver`, `demo_manufacturer`, `demo_client`, and `demo_spot_client`.
+The seed can be rerun to reset their shared password; it refuses to overwrite
+an existing account unless its demo email matches. Demo accounts do not create
+sample trips or trucks. Use this only with a local/test database, never
+production. Leave `EMAIL_MFA_ENABLED=false` for these fake-email staff accounts.
 
 Depot operations are available at `/depot`. Gate-Out checks active holds,
 damage, and cleaning; sanitization and KEPHIS clearance can also be required

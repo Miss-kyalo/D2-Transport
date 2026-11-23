@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import JobCardStorePanel from '../components/JobCardStorePanel';
 import SharedWorkbenchPanel from '../components/SharedWorkbenchPanel';
 import QuotePreviewModal from '../components/QuotePreviewModal';
-import RigInspectionCanvas from '../components/RigInspectionCanvas';
 import {
     buildQuotePreview,
     createJobPin,
@@ -15,6 +14,8 @@ import {
 } from '../lib/garageApi';
 import { flushOfflineQueue } from '../lib/offlineQueue';
 import './GarageWorkbenchPage.css';
+
+const RigInspectionCanvas = lazy(() => import('../components/RigInspectionCanvas'));
 
 function readImageAsDataUrl(file) {
     return new Promise((resolve, reject) => {
@@ -99,7 +100,11 @@ function LegacyGarageWorkbench() {
         const syncQueuedActions = async () => {
             try {
                 const result = await flushOfflineQueue();
-                if (result.synced > 0) {
+                if (result.accountMismatch > 0) {
+                    setFeedback(
+                        `${result.accountMismatch} queued action(s) belong to another or legacy account and were not sent. Sign in with the original account to sync them.`
+                    );
+                } else if (result.synced > 0) {
                     setFeedback(
                         `Synced ${result.synced} queued action(s); ${result.remaining} remain.`
                     );
@@ -339,13 +344,15 @@ function LegacyGarageWorkbench() {
                         className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
                     />
 
-                    <RigInspectionCanvas
-                        ref={canvasRef}
-                        vehicleRole={vehicleRole}
-                        pins={pins}
-                        onPlacePin={handlePlacePin}
-                        onSelectPin={setSelectedPin}
-                    />
+                    <Suspense fallback={<div role="status">Loading 3D inspection view...</div>}>
+                        <RigInspectionCanvas
+                            ref={canvasRef}
+                            vehicleRole={vehicleRole}
+                            pins={pins}
+                            onPlacePin={handlePlacePin}
+                            onSelectPin={setSelectedPin}
+                        />
+                    </Suspense>
 
                     {selectedPin && (
                         <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">

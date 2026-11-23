@@ -107,10 +107,11 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose, s
                         <h2 style={{ margin: '2px 0 4px', fontSize: '20px' }}>
                             {viewMode === 'payslip'
                                 ? `ITEMIZED PAYSLIP — ${monthRecord?.payroll_month || selectedMonth}`
-                                : `YEAR-TO-DATE STATUTORY & TAX SCHEDULE (${year})`}
+                                : `ANNUAL PAYE / P9 SUPPORT SCHEDULE (${year})`}
                         </h2>
                         <div style={{ fontSize: '12px', color: '#4b5d52' }}>
                             Employer Location: Athi River, Kenya • Currency: KES
+                            {viewMode === 'ytd' && ' • Internal schedule; verify against the approved KRA P9 form before filing'}
                         </div>
                     </div>
 
@@ -269,13 +270,17 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose, s
                                 </>
                             )
                         ) : (
-                            /* YTD / KRA & Labour Audit Schedule */
+                            /* Annual PAYE/P9 support schedule */
                             <div style={{ backgroundColor: '#ffffff', border: '1px solid #d6d3c9', borderRadius: '8px', padding: '14px', overflowX: 'auto' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'right' }}>
                                     <thead>
                                         <tr style={{ backgroundColor: '#eef2ee', borderBottom: '1px solid #143628' }}>
                                             <th style={{ padding: '7px', textAlign: 'left' }}>Month</th>
+                                            <th style={{ padding: '7px' }}>Basic</th>
+                                            <th style={{ padding: '7px' }}>Housing</th>
+                                            <th style={{ padding: '7px' }}>Off Pay</th>
                                             <th style={{ padding: '7px' }}>Gross Pay</th>
+                                            <th style={{ padding: '7px' }}>Taxable Pay</th>
                                             <th style={{ padding: '7px' }}>NSSF</th>
                                             <th style={{ padding: '7px' }}>SHIF</th>
                                             <th style={{ padding: '7px' }}>AHL</th>
@@ -287,7 +292,11 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose, s
                                         {records.map((rec) => (
                                             <tr key={rec.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                                                 <td style={{ padding: '7px', textAlign: 'left', fontWeight: 600 }}>{rec.payroll_month}</td>
+                                                <td style={{ padding: '7px' }}>{Number(rec.basic_pay).toLocaleString()}</td>
+                                                <td style={{ padding: '7px' }}>{Number(rec.housing_allowance).toLocaleString()}</td>
+                                                <td style={{ padding: '7px' }}>{Number(rec.off_pay).toLocaleString()}</td>
                                                 <td style={{ padding: '7px' }}>{Number(rec.gross_pay).toLocaleString()}</td>
+                                                <td style={{ padding: '7px' }}>{Number(rec.taxable_pay).toLocaleString()}</td>
                                                 <td style={{ padding: '7px' }}>{Number(rec.nssf_total).toLocaleString()}</td>
                                                 <td style={{ padding: '7px' }}>{Number(rec.shif_deduction).toLocaleString()}</td>
                                                 <td style={{ padding: '7px' }}>{Number(rec.housing_levy).toLocaleString()}</td>
@@ -299,7 +308,11 @@ export default function EmployeePayslipModal({ userId, selectedMonth, onClose, s
                                     <tfoot>
                                         <tr style={{ backgroundColor: '#eef2ee', fontWeight: 800, borderTop: '2px solid #143628' }}>
                                             <td style={{ padding: '7px', textAlign: 'left' }}>{year} YTD TOTAL</td>
+                                            <td style={{ padding: '7px' }}>{Number(ytd.basic_pay || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '7px' }}>{Number(ytd.housing_allowance || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '7px' }}>{Number(ytd.off_pay || 0).toLocaleString()}</td>
                                             <td style={{ padding: '7px' }}>{Number(ytd.gross_pay || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '7px' }}>{Number(ytd.taxable_pay || 0).toLocaleString()}</td>
                                             <td style={{ padding: '7px' }}>{Number(ytd.nssf_total || 0).toLocaleString()}</td>
                                             <td style={{ padding: '7px' }}>{Number(ytd.shif_deduction || 0).toLocaleString()}</td>
                                             <td style={{ padding: '7px' }}>{Number(ytd.housing_levy || 0).toLocaleString()}</td>
